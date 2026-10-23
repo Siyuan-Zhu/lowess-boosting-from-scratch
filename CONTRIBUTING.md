@@ -15,6 +15,7 @@ pip install -e ".[dev]"
 ```bash
 ruff check .
 ruff format --check .
+mypy
 pytest --cov
 ```
 

@@ -85,18 +85,30 @@ def test_tiny_frac_interpolates_the_training_targets():
     np.testing.assert_allclose(pred, y)
 
 
-def test_results_do_not_depend_on_the_internal_query_block_size(monkeypatch):
+def test_large_query_sets_match_predicting_in_small_batches():
+    # 20,000 training rows make the solver split 450 queries into several
+    # internal blocks; the result must not depend on how queries are grouped.
     rng = np.random.default_rng(4)
-    X = rng.normal(size=(50, 2))
+    X = rng.normal(size=(20_000, 2))
     y = np.sin(X[:, 0]) + X[:, 1] ** 2
-    X_new = rng.normal(size=(37, 2))
-    model = LowessRegressor(frac=0.3).fit(X, y)
-    expected = model.predict(X_new)
+    X_new = rng.normal(size=(450, 2))
+    model = LowessRegressor(frac=0.01).fit(X, y)
 
-    import lowess_boosting._local as local
+    batched = np.concatenate(
+        [model.predict(X_new[i : i + 50]) for i in range(0, 450, 50)]
+    )
 
-    monkeypatch.setattr(local, "_BLOCK_ENTRIES", 1)
-    np.testing.assert_allclose(model.predict(X_new), expected, rtol=1e-12)
+    np.testing.assert_allclose(model.predict(X_new), batched, rtol=1e-12)
+
+
+@pytest.mark.parametrize(("frac", "n", "expected"), [(0.07, 100, 7), (0.14, 50, 7)])
+def test_span_size_is_not_inflated_by_floating_point_error(frac, n, expected):
+    # 0.07 * 100 evaluates to 7.000000000000001 in floating point.
+    X = np.arange(float(n)).reshape(-1, 1)
+
+    model = LowessRegressor(frac=frac).fit(X, np.zeros(n))
+
+    assert model.n_neighbors_ == expected
 
 
 def test_predictions_are_invariant_to_translating_inputs_and_targets():
@@ -112,7 +124,7 @@ def test_predictions_are_invariant_to_translating_inputs_and_targets():
     np.testing.assert_allclose(moved, base + 10.0, rtol=1e-8, atol=1e-8)
 
 
-def test_predictions_stay_within_target_range_for_local_constant_extremes():
+def test_single_neighbour_predictions_are_training_targets():
     # Property: with a single neighbour the prediction is a training target.
     rng = np.random.default_rng(6)
     X = rng.normal(size=(20, 1))
@@ -134,6 +146,9 @@ def test_predictions_stay_within_target_range_for_local_constant_extremes():
         ({"robust_iters": True}, "robust_iters"),
         ({"ridge": -1.0}, "ridge"),
         ({"ridge": float("nan")}, "ridge"),
+        ({"frac": True}, "frac"),
+        ({"ridge": False}, "ridge"),
+        ({"bandwidth": True}, "bandwidth"),
     ],
 )
 def test_invalid_parameters_are_rejected_at_fit(params, match):

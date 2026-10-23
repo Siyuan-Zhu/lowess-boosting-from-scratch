@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-import numbers
 from typing import Literal
 
 import numpy as np
@@ -12,6 +10,13 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from ._local import KERNELS, bisquare_robustness_weights, local_linear_predict
+from ._validation import (
+    check_fraction,
+    check_int,
+    check_non_negative,
+    check_positive_or_none,
+    count_of,
+)
 
 
 class LowessRegressor(RegressorMixin, BaseEstimator):
@@ -50,6 +55,8 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
         L2 penalty on the local slopes. The local intercept (the prediction) is
         not penalised. A small positive value keeps the local systems solvable
         when a neighbourhood has fewer distinct points than ``n_features + 1``.
+        With ``ridge=0``, nearly collinear neighbourhoods can give unstable
+        local slopes.
 
     Attributes
     ----------
@@ -127,7 +134,7 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
         X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
         self.X_fit_ = X_fit
         self.y_fit_ = y_fit
-        self.n_neighbors_ = max(1, math.ceil(self.frac * X_fit.shape[0]))
+        self.n_neighbors_ = count_of(self.frac, X_fit.shape[0])
         self.robustness_weights_ = np.ones(X_fit.shape[0])
         scale = float(np.max(np.abs(y_fit)))
         for _ in range(self.robust_iters):
@@ -168,21 +175,7 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             raise ValueError(
                 f"kernel must be one of {sorted(KERNELS)}, got {self.kernel!r}."
             )
-        if not isinstance(self.frac, numbers.Real) or not 0 < self.frac <= 1:
-            raise ValueError(f"frac must be a float in (0, 1], got {self.frac!r}.")
-        if (
-            not isinstance(self.robust_iters, numbers.Integral)
-            or isinstance(self.robust_iters, bool)
-            or self.robust_iters < 0
-        ):
-            raise ValueError(
-                f"robust_iters must be a non-negative int, got {self.robust_iters!r}."
-            )
-        if self.bandwidth is not None and (
-            not isinstance(self.bandwidth, numbers.Real) or not self.bandwidth > 0
-        ):
-            raise ValueError(
-                f"bandwidth must be None or a float > 0, got {self.bandwidth!r}."
-            )
-        if not isinstance(self.ridge, numbers.Real) or not self.ridge >= 0:
-            raise ValueError(f"ridge must be a float >= 0, got {self.ridge!r}.")
+        check_fraction("frac", self.frac)
+        check_int("robust_iters", self.robust_iters, low=0)
+        check_positive_or_none("bandwidth", self.bandwidth)
+        check_non_negative("ridge", self.ridge)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numbers
 from collections import deque
 from collections.abc import Iterator
 from typing import Any
@@ -13,6 +12,7 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted, validate_data
 
+from ._validation import check_fraction, check_int, count_of
 from .lowess import LowessRegressor
 
 _MAX_SEED = np.iinfo(np.int32).max
@@ -44,8 +44,9 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
         Shrinkage applied to each stage, in (0, 1].
     subsample : float, default=1.0
         Fraction of training rows, drawn without replacement, used to fit each
-        stage. Values below 1 give stochastic gradient boosting and, for LOWESS,
-        cut each stage's cost roughly in proportion.
+        stage (``ceil(subsample * n_samples)`` rows). Values below 1 give
+        stochastic gradient boosting and, for LOWESS, cut each stage's cost
+        roughly in proportion.
     residual_estimator : regressor, default=None
         Optional regressor fitted once, without shrinkage, to the residuals left
         after the last boosting stage.
@@ -125,7 +126,7 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
         X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
         rng = check_random_state(self.random_state)
         n_samples = X_fit.shape[0]
-        n_rows = max(1, int(self.subsample * n_samples))
+        n_rows = count_of(self.subsample, n_samples)
         base = LowessRegressor() if self.estimator is None else self.estimator
 
         self.init_ = float(np.mean(y_fit))
@@ -192,25 +193,9 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
             yield pred + self.residual_estimator_.predict(X_query)
 
     def _check_params(self) -> None:
-        if (
-            not isinstance(self.n_estimators, numbers.Integral)
-            or isinstance(self.n_estimators, bool)
-            or self.n_estimators < 1
-        ):
-            raise ValueError(
-                f"n_estimators must be an int >= 1, got {self.n_estimators!r}."
-            )
-        if (
-            not isinstance(self.learning_rate, numbers.Real)
-            or not 0 < self.learning_rate <= 1
-        ):
-            raise ValueError(
-                f"learning_rate must be a float in (0, 1], got {self.learning_rate!r}."
-            )
-        if not isinstance(self.subsample, numbers.Real) or not 0 < self.subsample <= 1:
-            raise ValueError(
-                f"subsample must be a float in (0, 1], got {self.subsample!r}."
-            )
+        check_int("n_estimators", self.n_estimators, low=1)
+        check_fraction("learning_rate", self.learning_rate)
+        check_fraction("subsample", self.subsample)
         for name in ("estimator", "residual_estimator"):
             value = getattr(self, name)
             if value is not None and not (

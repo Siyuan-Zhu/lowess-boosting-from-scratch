@@ -18,18 +18,6 @@ def test_reproduces_a_straight_line_exactly():
     np.testing.assert_allclose(pred, [2.0, -5.5, -16.8], atol=1e-10)
 
 
-def test_symmetric_neighbourhood_gives_hand_computed_weighted_mean():
-    # Query x=2 on x=0..4 with all 5 points in the span: h=2, so the tricubic
-    # weights are [0, 343/512, 1, 343/512, 0]. With symmetric weights the local
-    # intercept is the weighted mean of y = [0, 1, 0, 1, 0], which is 343/599.
-    X = np.arange(5.0).reshape(-1, 1)
-    y = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
-
-    pred = LowessRegressor(frac=1.0, ridge=0.0).fit(X, y).predict([[2.0]])
-
-    np.testing.assert_allclose(pred, [343 / 599], rtol=1e-12)
-
-
 def test_line_through_the_only_two_weighted_points():
     # With k=3 the third-nearest point sits exactly on the bandwidth and gets
     # zero tricubic weight, so the local line passes through (0, 1) and (1, 3).
@@ -56,7 +44,10 @@ def test_reproduces_a_plane_in_three_dimensions():
 @pytest.mark.parametrize(
     ("kernel", "expected"),
     [
-        # Same symmetric setup as above; u = |x - 2| / 2 = [1, .5, 0, .5, 1].
+        # Query x=2 on x=0..4 with all five points in the span, so h=2 and
+        # u = |x - 2| / 2 = [1, .5, 0, .5, 1]. With symmetric weights the local
+        # intercept is the weighted mean of y = [0, 1, 0, 1, 0].
+        # Tricubic: weights [0, 343/512, 1, 343/512, 0] -> 686 / 1198.
         ("tricubic", 343 / 599),
         # Epanechnikov: K(.5)/K(0) = 0.75 and K(1) = 0 -> 1.5 / 2.5.
         ("epanechnikov", 0.6),
@@ -112,7 +103,8 @@ def test_without_robust_iterations_all_points_keep_unit_weight():
 
 
 def test_fixed_bandwidth_matches_the_hand_computed_tricubic_case():
-    # bandwidth=2 at x=2 gives the same scaled distances as frac=1 above.
+    # bandwidth=2 at x=2 gives the same scaled distances as frac=1 in the
+    # kernel test above.
     X = np.arange(5.0).reshape(-1, 1)
     y = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
 

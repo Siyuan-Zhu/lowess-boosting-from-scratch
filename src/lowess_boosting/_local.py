@@ -36,10 +36,6 @@ KERNELS = {
 }
 
 
-# Kernel argument beyond which weights are set to zero when the bandwidth is a
-# fixed width. In nearest-neighbour mode every kernel is cut off at u = 1.
-_FIXED_WIDTH_CUTOFF = {"gaussian": 4.0}
-
 # Upper bound on the number of entries in one (queries x training points) block.
 _BLOCK_ENTRIES = 2**22
 
@@ -122,7 +118,10 @@ def _kernel_weights(
 ) -> np.ndarray:
     if bandwidth is not None:
         u = dist / bandwidth
-        cutoff = _FIXED_WIDTH_CUTOFF.get(kernel, 1.0)
+        # The compact kernels vanish at u = 1. With a fixed width the gaussian
+        # is cut off at u = 4, as in the course notebook; in nearest-neighbour
+        # mode every kernel is cut off at the neighbourhood edge (u = 1).
+        cutoff = 4.0 if kernel == "gaussian" else 1.0
     else:
         assert n_neighbors is not None
         k = n_neighbors - 1

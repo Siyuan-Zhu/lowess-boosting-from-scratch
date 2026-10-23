@@ -29,8 +29,10 @@ rng = np.random.default_rng(0)
 X = rng.uniform(-3, 3, size=(500, 2))
 y = np.sin(X[:, 0]) * X[:, 1] + rng.normal(scale=0.2, size=500)
 
-for model in [LowessRegressor(frac=0.3),
-              LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5)]:
+for model in [
+    LowessRegressor(frac=0.3),
+    LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5),
+]:
     pipe = make_pipeline(StandardScaler(), model)
     print(type(model).__name__, cross_val_score(pipe, X, y, cv=5).mean().round(3))
 ```
@@ -131,9 +133,8 @@ these problems in the notebooks:
   a Delaunay triangulation and a nearest-neighbour fallback outside the convex
   hull. The package runs the local fit at each query point directly, with no
   PCA step and no fallback. The course function also built two `n x n`
-  diagonal matrices per point. In a one-off timing on 800 rows with 8
-  features, it took 3.8 s to fit and predict 200 points; this package took
-  5 ms (single-threaded BLAS, Apple arm64).
+  diagonal matrices for every training point; the package builds the normal
+  equations for a block of queries with two matrix products.
 - The ridge term was added to the whole normal matrix, intercept included, so
   predictions changed when a constant was added to `y`. Only slopes are
   penalised now, and a test checks that shifting `X` and `y` shifts the
@@ -141,6 +142,12 @@ these problems in the notebooks:
 - The first notebook fitted `LinearRegression` to `diag(w) X` and `diag(w) y`.
   That leaves the intercept column unweighted and is not weighted least
   squares. The package solves the weighted normal equations.
+- The notebooks set each point's bandwidth to `sorted_distances[r]` with
+  `r = ceil(frac * n)` and the point itself at index 0, which is the
+  (r+1)-th smallest distance. The package uses the `ceil(frac * n)`-th
+  smallest distance, so at a training point the window has one point fewer.
+  At `frac=1` the farthest training point gets zero weight with the compact
+  kernels.
 - The notebook argument `iter` counted fitting passes. `robust_iters` counts
   robustifying passes, so `iter=3` corresponds to `robust_iters=2`.
 - The boosting project fitted one LOWESS stage and then a random forest or

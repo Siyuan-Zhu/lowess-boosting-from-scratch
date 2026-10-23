@@ -90,6 +90,15 @@ def test_subsampling_is_repeatable_with_a_seed_and_varies_without_one():
     assert fit(7).estimators_[0].X_fit_.shape[0] == 60
 
 
+def test_subsample_size_is_not_shrunk_by_floating_point_error():
+    # 0.29 * 100 evaluates to 28.999999999999996 in floating point.
+    X, y = _wiggly(n=100)
+
+    model = LowessBoostingRegressor(n_estimators=1, subsample=0.29).fit(X, y)
+
+    assert model.estimators_[0].X_fit_.shape[0] == 29
+
+
 def test_seeds_only_sub_estimators_whose_random_state_is_unset():
     X, y = _wiggly()
     pinned = RandomForestRegressor(n_estimators=5, random_state=123)
@@ -125,6 +134,8 @@ def test_any_regressor_can_be_the_base_learner():
         ({"learning_rate": 1.5}, ValueError, "learning_rate"),
         ({"subsample": 0.0}, ValueError, "subsample"),
         ({"subsample": 2}, ValueError, "subsample"),
+        ({"learning_rate": True}, ValueError, "learning_rate"),
+        ({"subsample": True}, ValueError, "subsample"),
         ({"estimator": "lowess"}, TypeError, "estimator"),
         ({"residual_estimator": 3}, TypeError, "residual_estimator"),
     ],
