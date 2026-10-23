@@ -158,15 +158,20 @@ def markdown_table(all_results):
     lines = []
     for dataset, info in all_results.items():
         lines.append(
-            f"\n**{dataset}** (n={info['n_samples']}, p={info['n_features']}, "
-            f"target: {info['target']})\n"
+            f"\n### {dataset}\n\nn={info['n_samples']}, p={info['n_features']}, "
+            f"target: {info['target']}\n"
         )
-        lines.append("| Model | RMSE (mean ± sd) | R² | Fit + predict, s/fold |")
-        lines.append("|---|---|---|---|")
+        lines.append(
+            "| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) "
+            "| Fit + predict, s/fold |"
+        )
+        lines.append("|---|---|---|---|---|---|")
         ranked = sorted(info["models"].items(), key=lambda kv: np.mean(kv[1]["rmse"]))
         for name, res in ranked:
+            rmse = np.asarray(res["rmse"])
             lines.append(
-                f"| {name} | {np.mean(res['rmse']):.3f} ± {np.std(res['rmse']):.3f} "
+                f"| {name} | {rmse.mean():.3f} ± {rmse.std():.3f} "
+                f"| {np.median(rmse):.3f} | {rmse.max():.3f} "
                 f"| {np.mean(res['r2']):.3f} | {np.mean(res['seconds']):.2f} |"
             )
     return "\n".join(lines)
@@ -226,7 +231,23 @@ def main():
     parser.add_argument(
         "--plot", action="store_true", help="Save a PNG (needs matplotlib)."
     )
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="Rebuild results.md (and the PNG with --plot) from results.json "
+        "without refitting.",
+    )
     args = parser.parse_args()
+
+    if args.render:
+        saved = json.loads((RESULTS_DIR / "results.json").read_text())
+        table = markdown_table(saved["results"])
+        (RESULTS_DIR / "results.md").write_text(table + "\n")
+        print(table)
+        print("\nSettings:", json.dumps(saved["settings"]))
+        if args.plot:
+            plot(saved["results"], RESULTS_DIR / "rmse.png")
+        return
 
     loaders = {
         "cars": ("Auto MPG", "mpg", load_cars),

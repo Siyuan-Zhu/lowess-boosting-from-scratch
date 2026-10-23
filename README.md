@@ -166,7 +166,100 @@ failure. scikit-learn skips its array-API input check unless
 
 ## Benchmarks
 
-Results are added after the benchmark run completes.
+These numbers come from one run of the script on 2026-10-23:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
+    python benchmarks/run_benchmarks.py
+```
+
+Install the `bench` extra first. Results go to `benchmarks/results/`
+(gitignored). `--plot` also saves a per-fold RMSE chart, and `--render`
+rebuilds the table from the saved `results.json` without refitting.
+
+Settings: repeated K-fold with 5 folds x 3 repeats (15 test folds), seed 0,
+every model behind a `StandardScaler`, all models on the same folds. LOWESS
+`frac` (from 0.02, 0.05, 0.1, 0.2, 0.4) and KNN `n_neighbors` (5, 10, 20, 40)
+are picked per outer fold by a 3-fold inner grid search on the training part.
+Everything else is fixed: the boosting model uses 5 stages at learning rate
+0.5, and the "course setup" row is LOWESS at `frac=1/6` followed by a
+100-tree, depth-7 random forest on its residuals. Single-threaded BLAS,
+Python 3.13.15, numpy 2.5.4, scikit-learn 1.9.1, Apple arm64. The whole run
+took 484 s.
+
+California housing is a seeded 5,000-row sample of the 20,640 rows. A full-data
+run was started first and stopped: the tuned boosting model refits LOWESS
+at every training row in every stage, and after 45 minutes single-threaded it
+had not finished the 15 folds for that one model.
+
+Auto MPG uses the three predictors from the course project (cylinders,
+displacement, weight). The datasets come from OpenML (ids 196 and 4353) and
+scikit-learn at run time and are not stored in this repository.
+
+### Auto MPG
+
+n=398, p=3, target: mpg
+
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
+|---|---|---|---|---|---|
+| LOWESS (tuned frac) | 4.082 ± 0.390 | 4.071 | 4.913 | 0.723 | 0.02 |
+| LOWESS boosting, 5 stages (tuned frac) | 4.117 ± 0.398 | 4.054 | 4.909 | 0.718 | 0.11 |
+| Gradient boosting (sklearn defaults) | 4.179 ± 0.408 | 4.222 | 4.988 | 0.709 | 0.02 |
+| KNN (tuned k) | 4.194 ± 0.383 | 4.129 | 4.962 | 0.708 | 0.02 |
+| LOWESS + random forest on residuals (course setup) | 4.208 ± 0.411 | 4.323 | 4.989 | 0.705 | 0.04 |
+| HistGradientBoosting (sklearn defaults) | 4.262 ± 0.499 | 4.185 | 5.112 | 0.698 | 0.02 |
+| Linear regression | 4.316 ± 0.376 | 4.175 | 5.045 | 0.691 | 0.00 |
+| Random forest (300 trees) | 4.360 ± 0.442 | 4.416 | 5.009 | 0.683 | 0.11 |
+
+### Concrete strength
+
+n=1030, p=8, target: MPa
+
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
+|---|---|---|---|---|---|
+| HistGradientBoosting (sklearn defaults) | 4.365 ± 0.471 | 4.404 | 5.080 | 0.930 | 0.05 |
+| Random forest (300 trees) | 4.879 ± 0.508 | 4.841 | 5.808 | 0.913 | 0.40 |
+| LOWESS + random forest on residuals (course setup) | 5.016 ± 0.448 | 4.930 | 6.095 | 0.908 | 0.12 |
+| Gradient boosting (sklearn defaults) | 5.065 ± 0.353 | 5.124 | 5.710 | 0.907 | 0.06 |
+| LOWESS boosting, 5 stages (tuned frac) | 6.356 ± 0.335 | 6.260 | 6.925 | 0.853 | 0.71 |
+| LOWESS (tuned frac) | 6.668 ± 0.359 | 6.654 | 7.422 | 0.838 | 0.06 |
+| KNN (tuned k) | 8.749 ± 0.372 | 8.797 | 9.353 | 0.722 | 0.02 |
+| Linear regression | 10.482 ± 0.459 | 10.513 | 11.407 | 0.602 | 0.00 |
+
+### California housing (5000-row sample)
+
+n=5000, p=8, target: median value, $100k
+
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
+|---|---|---|---|---|---|
+| HistGradientBoosting (sklearn defaults) | 0.506 ± 0.025 | 0.499 | 0.541 | 0.805 | 0.07 |
+| Gradient boosting (sklearn defaults) | 0.549 ± 0.025 | 0.545 | 0.583 | 0.770 | 0.42 |
+| Random forest (300 trees) | 0.554 ± 0.026 | 0.548 | 0.596 | 0.766 | 2.75 |
+| KNN (tuned k) | 0.666 ± 0.029 | 0.664 | 0.712 | 0.661 | 0.18 |
+| LOWESS + random forest on residuals (course setup) | 0.849 ± 0.887 | 0.572 | 4.136 | -0.127 | 1.33 |
+| LOWESS boosting, 5 stages (tuned frac) | 0.853 ± 0.840 | 0.609 | 3.984 | -0.073 | 24.31 |
+| LOWESS (tuned frac) | 0.871 ± 0.899 | 0.601 | 4.220 | -0.172 | 1.46 |
+| Linear regression | 1.369 ± 1.423 | 0.729 | 5.762 | -1.896 | 0.00 |
+
+### Reading the results
+
+- Auto MPG has 3 features and 398 rows. Tuned LOWESS has the lowest mean
+  RMSE, but all eight models are within 0.3 mpg of each other and the
+  fold-to-fold spread is about 0.4, so no model clearly wins.
+- On concrete strength the tree ensembles win. Five boosting stages take
+  LOWESS from 6.67 to 6.36 RMSE, still well behind HistGradientBoosting at
+  4.37. The course setup reaches 5.02, about what the random forest gets on its
+  own (4.88), so the forest is doing most of the work.
+- On the California sample the tree ensembles win again. The three LOWESS
+  models have a median fold RMSE between 0.57 and 0.61, but one fold scores
+  about 4. That fold's test set contains a block group whose average occupancy
+  is 1,243 (the training maximum is 41). LOWESS extends the local linear fit
+  out to it and predicts 133 for a true value of 1.4. Linear regression has
+  three bad folds, that one included. KNN and the tree ensembles build
+  predictions from averages of training targets or residuals, so an extreme
+  input cannot push them far outside the training range.
+- Cost: the boosting model takes 24 s per fold on 4,000 training rows.
+  HistGradientBoosting takes 0.07 s.
 
 ## Limitations
 
@@ -183,6 +276,13 @@ Results are added after the benchmark run completes.
   drop features that do not matter.
 - No `sample_weight`, sparse input, missing values (NaN is rejected),
   multi-output targets or classification.
+- Local linear fits extrapolate linearly. A query far outside the training
+  data gets its neighbourhood's slope extended out to it, which is how one
+  extreme California row produced a prediction 100 times too large (see
+  Benchmarks). Clip or transform heavy-tailed features first.
+- On the two larger benchmark datasets, scikit-learn's tree ensembles are
+  more accurate and much faster. LOWESS was competitive only on Auto MPG, the
+  smallest dataset and the only one with 3 features.
 - `LowessBoostingRegressor` supports squared error only and has no early
   stopping. Use `staged_predict` on a validation set to pick `n_estimators`.
 
