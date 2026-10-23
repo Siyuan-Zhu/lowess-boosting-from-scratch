@@ -110,8 +110,7 @@ def local_linear_predict(
         A = (W @ ZZ).reshape(-1, q, q) + penalty
         A[empty] = np.eye(q)
         b = W @ Zy
-        beta = _solve_batched(A, b)
-        pred = beta[:, 0] + np.einsum("ij,ij->i", beta[:, 1:], Xq)
+        pred = _solve_intercepts(A, b, Xq)
         if empty.any():
             pred[empty] = _nearest_trusted_mean(dist[empty], y_train, sample_weight)
         out[start : start + block] = pred
@@ -136,13 +135,25 @@ def _kernel_weights(dist, kernel, n_neighbors, bandwidth):
     return np.where(u <= cutoff, KERNELS[kernel](np.minimum(u, cutoff)), 0.0)
 
 
-def _solve_batched(A, b):
+def _solve_intercepts(A, b, Xq):
+    """Fitted value at each query from its normal equations ``A beta = b``."""
     try:
-        return np.linalg.solve(A, b[:, :, None])[:, :, 0]
+        beta = np.linalg.solve(A, b[:, :, None])[:, :, 0]
+        return beta[:, 0] + np.einsum("ij,ij->i", beta[:, 1:], Xq)
     except np.linalg.LinAlgError:
-        # Only reachable with ridge=0 and a degenerate neighbourhood; the
-        # minimum-norm solution sets the unidentified slopes to zero.
-        return (np.linalg.pinv(A, hermitian=True) @ b[:, :, None])[:, :, 0]
+        # Only reachable with ridge=0 and a degenerate neighbourhood (fewer
+        # distinct points than n_features + 1). Profile out the intercept and
+        # take the minimum-norm slopes, which is the ridge -> 0 limit of the
+        # penalised fit: unidentified slope directions are set to zero.
+        s0 = A[:, 0, 0]
+        mean_x = A[:, 0, 1:] / s0[:, None]
+        mean_y = b[:, 0] / s0
+        scatter = A[:, 1:, 1:] - s0[:, None, None] * (
+            mean_x[:, :, None] * mean_x[:, None, :]
+        )
+        cross = b[:, 1:] - s0[:, None] * mean_x * mean_y[:, None]
+        slopes = (np.linalg.pinv(scatter, hermitian=True) @ cross[:, :, None])[:, :, 0]
+        return mean_y + np.einsum("ij,ij->i", slopes, Xq - mean_x)
 
 
 def _nearest_trusted_mean(dist, y_train, sample_weight):
