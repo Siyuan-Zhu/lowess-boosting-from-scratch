@@ -7,6 +7,12 @@ work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
 
 The only runtime dependencies are numpy, scipy and scikit-learn.
 
+![Per-fold RMSE of each model on three datasets, relative to the best model's mean RMSE](https://raw.githubusercontent.com/Siyuan-Zhu/lowess-boosting-from-scratch/main/benchmarks/results/rmse.png)
+
+Per-fold RMSE on three public datasets, relative to the best model on each
+(15 folds; details under [Benchmarks](#benchmarks)). LOWESS is competitive on
+the 3-feature Auto MPG data and behind the tree ensembles on the other two.
+
 ## Install
 
 ```bash
@@ -59,9 +65,9 @@ around the query point.
 |---|---|
 | `frac` | Share of the training set in each neighbourhood. The bandwidth at a query is the distance to its `ceil(frac * n)`-th nearest training point. |
 | `bandwidth` | Fixed kernel width in feature units. Overrides `frac` when set. |
-| `kernel` | `"tricubic"`, `"epanechnikov"`, `"quartic"` or `"gaussian"`, applied to `u = distance / bandwidth`. |
+| `kernel` | `"tricubic"`, `"epanechnikov"`, `"quartic"` or `"gaussian"`, applied to `u = distance / bandwidth`. In `frac` mode the gaussian is cut off at the neighbourhood edge where it still weighs 0.61, so its fits can jump as points enter or leave the window. |
 | `robust_iters` | Cleveland's bisquare robustifying iterations. Points with residuals above six median absolute residuals get zero weight. |
-| `ridge` | L2 penalty on the local slopes, never on the intercept. Keeps neighbourhoods with fewer than `n_features + 1` distinct points solvable. |
+| `ridge` | Relative L2 penalty on the local slopes: ridge regression on locally standardised features, so results do not depend on the units of `X`. The intercept is never penalised. |
 
 Fitted attributes: `X_fit_`, `y_fit_`, `n_neighbors_`, `robustness_weights_`,
 `n_features_in_`.
@@ -92,18 +98,18 @@ All the numerical work sits in one private function,
 distances with `scipy.spatial.distance.cdist`, finds each query's k-th
 neighbour distance with `np.partition`, applies the kernel and then builds
 every query's weighted normal equations with two matrix products against
-precomputed per-sample outer products `z_i z_i^T`. The batched systems are
-solved with `np.linalg.solve`. Blocks are capped at about 4 million
+per-sample outer products `z_i z_i^T`. It then profiles out the intercept,
+standardises each feature by its local weighted spread and solves for the
+slopes with a batched eigendecomposition. Blocks are capped at about 2 million
 query-by-training entries, so memory stays bounded for large test sets.
 
 ### Degenerate neighbourhoods
 
-With `ridge=0`, a neighbourhood of fewer than `n_features + 1` distinct points
-makes the local system singular. The solver then profiles out the intercept
-and takes minimum-norm slopes, which is the limit of the ridge solution as the
-penalty goes to zero. Slopes in directions the neighbourhood does not span are
-set to zero, so when all weighted points sit at one location the prediction is
-their weighted mean. If a query has no positively weighted training point at
+A neighbourhood with fewer than `n_features + 1` distinct points cannot
+identify every slope. Eigenvalues of the standardised system below a relative
+cutoff are dropped, so slopes in directions the neighbourhood does not span
+are set to zero at any `ridge`, including 0, and in any units. When all
+weighted points sit at one location the prediction is their weighted mean. If a query has no positively weighted training point at
 all (a narrow fixed bandwidth, or robustness weights that zero a whole
 neighbourhood), it gets the mean target of the nearest training points that
 still have positive weight.
@@ -117,43 +123,11 @@ for the next pass and for prediction. The median absolute residual has a small
 floor relative to `max|y|`, so an exact fit does not turn round-off into
 outliers.
 
-### Changes from the course notebooks
+### Origin
 
-This package began as three DATA 441 projects (see Acknowledgements). The methods are the same: k-nearest
-neighbour spans, the four kernels, robustifying iterations, a small ridge term
-and boosting with LOWESS followed by another regressor. The rewrite fixes
-these problems in the notebooks:
-
-- The multivariate version applied the kernel to raw distances instead of
-  distances divided by the neighbourhood radius. On standardised data the
-  tricubic kernel `(1 - d^3)^3` then goes negative for distances above 1. The
-  package scales by the radius, as Cleveland and Gramfort do.
-- New points were predicted by interpolating the training-point fits: linear
-  interpolation in 1-D, and in n-D a PCA projection to three components,
-  a Delaunay triangulation and a nearest-neighbour fallback outside the convex
-  hull. The package runs the local fit at each query point directly, with no
-  PCA step and no fallback. The course function also built two `n x n`
-  diagonal matrices for every training point; the package builds the normal
-  equations for a block of queries with two matrix products.
-- The ridge term was added to the whole normal matrix, intercept included, so
-  predictions changed when a constant was added to `y`. Only slopes are
-  penalised now, and a test checks that shifting `X` and `y` shifts the
-  predictions by the same constant.
-- The first notebook fitted `LinearRegression` to `diag(w) X` and `diag(w) y`.
-  That leaves the intercept column unweighted and is not weighted least
-  squares. The package solves the weighted normal equations.
-- The notebooks set each point's bandwidth to `sorted_distances[r]` with
-  `r = ceil(frac * n)` and the point itself at index 0, which is the
-  (r+1)-th smallest distance. The package uses the `ceil(frac * n)`-th
-  smallest distance, so at a training point the window has one point fewer.
-  At `frac=1` the farthest training point gets zero weight with the compact
-  kernels.
-- The notebook argument `iter` counted fitting passes. `robust_iters` counts
-  robustifying passes, so `iter=3` corresponds to `robust_iters=2`.
-- The boosting project fitted one LOWESS stage and then a random forest or
-  XGBoost on its residuals. `LowessBoostingRegressor(LowessRegressor(frac=1/6),
-  n_estimators=1, learning_rate=1.0, residual_estimator=RandomForestRegressor())`
-  reproduces that setup, and `n_estimators > 1` with shrinkage generalises it.
+The package started as three DATA 441 course projects.
+[HISTORY.md](https://github.com/Siyuan-Zhu/lowess-boosting-from-scratch/blob/main/HISTORY.md)
+lists what changed from those notebooks and why.
 
 ### scikit-learn checks
 
@@ -163,6 +137,11 @@ fixed gaussian bandwidth, default boosting, and boosting with subsampling and
 a residual estimator. Every check passes and none is marked as an expected
 failure. scikit-learn skips its array-API input check unless
 `SCIPY_ARRAY_API=1` is set; with the variable set, that check passes too.
+
+In one dimension, `LowessRegressor(frac=k/n, robust_iters=K, ridge=0)`
+matches statsmodels' `lowess(frac=f, it=K, delta=0)` at the training points
+to within 1e-10, where `k = floor(f * n)` (`tests/test_statsmodels_agreement.py`,
+run with the `statsmodels` extra installed).
 
 ## Benchmarks
 
@@ -174,7 +153,7 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 \
 ```
 
 Install the `bench` extra first. Results go to `benchmarks/results/`
-(gitignored). `--plot` also saves a per-fold RMSE chart, and `--render`
+(gitignored except the chart at the top of this README). `--plot` also saves a per-fold RMSE chart, and `--render`
 rebuilds the table from the saved `results.json` without refitting.
 
 Settings: repeated K-fold with 5 folds x 3 repeats (15 test folds), seed 0,
@@ -185,7 +164,8 @@ Everything else is fixed: the boosting model uses 5 stages at learning rate
 0.5, and the "course setup" row is LOWESS at `frac=1/6` followed by a
 100-tree, depth-7 random forest on its residuals. Single-threaded BLAS,
 Python 3.13.15, numpy 2.5.4, scikit-learn 1.9.1, Apple arm64. The whole run
-took 484 s.
+took 374 s. The per-fit column divides the fold time by the number of fits;
+inner-fold fits use two thirds of the training rows, so it is approximate.
 
 California housing is a seeded 5,000-row sample of the 20,640 rows. A full-data
 run was started first and stopped: the tuned boosting model refits LOWESS
@@ -200,46 +180,46 @@ scikit-learn at run time and are not stored in this repository.
 
 n=398, p=3, target: mpg
 
-| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
-|---|---|---|---|---|---|
-| LOWESS (tuned frac) | 4.082 ± 0.390 | 4.071 | 4.913 | 0.723 | 0.02 |
-| LOWESS boosting, 5 stages (tuned frac) | 4.117 ± 0.398 | 4.054 | 4.909 | 0.718 | 0.11 |
-| Gradient boosting (sklearn defaults) | 4.179 ± 0.408 | 4.222 | 4.988 | 0.709 | 0.02 |
-| KNN (tuned k) | 4.194 ± 0.383 | 4.129 | 4.962 | 0.708 | 0.02 |
-| LOWESS + random forest on residuals (course setup) | 4.208 ± 0.411 | 4.323 | 4.989 | 0.705 | 0.04 |
-| HistGradientBoosting (sklearn defaults) | 4.262 ± 0.499 | 4.185 | 5.112 | 0.698 | 0.02 |
-| Linear regression | 4.316 ± 0.376 | 4.175 | 5.045 | 0.691 | 0.00 |
-| Random forest (300 trees) | 4.360 ± 0.442 | 4.416 | 5.009 | 0.683 | 0.11 |
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fits per fold | Seconds per fold (all fits) | Seconds per fit (approx.) |
+|---|---|---|---|---|---|---|---|
+| LOWESS (tuned frac) | 4.082 ± 0.390 | 4.072 | 4.913 | 0.723 | 16 | 0.02 | 0.00 |
+| LOWESS boosting, 5 stages (tuned frac) | 4.118 ± 0.399 | 4.054 | 4.909 | 0.718 | 16 | 0.12 | 0.01 |
+| Gradient boosting (sklearn defaults) | 4.179 ± 0.408 | 4.222 | 4.988 | 0.709 | 1 | 0.02 | 0.02 |
+| KNN (tuned k) | 4.194 ± 0.383 | 4.129 | 4.962 | 0.708 | 13 | 0.01 | 0.00 |
+| LOWESS + random forest on residuals (course setup) | 4.223 ± 0.405 | 4.321 | 4.983 | 0.703 | 1 | 0.04 | 0.04 |
+| HistGradientBoosting (sklearn defaults) | 4.262 ± 0.499 | 4.185 | 5.112 | 0.698 | 1 | 0.02 | 0.02 |
+| Linear regression | 4.316 ± 0.376 | 4.175 | 5.045 | 0.691 | 1 | 0.00 | 0.00 |
+| Random forest (300 trees) | 4.360 ± 0.442 | 4.416 | 5.009 | 0.683 | 1 | 0.11 | 0.11 |
 
 ### Concrete strength
 
 n=1030, p=8, target: MPa
 
-| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
-|---|---|---|---|---|---|
-| HistGradientBoosting (sklearn defaults) | 4.365 ± 0.471 | 4.404 | 5.080 | 0.930 | 0.05 |
-| Random forest (300 trees) | 4.879 ± 0.508 | 4.841 | 5.808 | 0.913 | 0.40 |
-| LOWESS + random forest on residuals (course setup) | 5.016 ± 0.448 | 4.930 | 6.095 | 0.908 | 0.12 |
-| Gradient boosting (sklearn defaults) | 5.065 ± 0.353 | 5.124 | 5.710 | 0.907 | 0.06 |
-| LOWESS boosting, 5 stages (tuned frac) | 6.356 ± 0.335 | 6.260 | 6.925 | 0.853 | 0.71 |
-| LOWESS (tuned frac) | 6.668 ± 0.359 | 6.654 | 7.422 | 0.838 | 0.06 |
-| KNN (tuned k) | 8.749 ± 0.372 | 8.797 | 9.353 | 0.722 | 0.02 |
-| Linear regression | 10.482 ± 0.459 | 10.513 | 11.407 | 0.602 | 0.00 |
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fits per fold | Seconds per fold (all fits) | Seconds per fit (approx.) |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting (sklearn defaults) | 4.365 ± 0.471 | 4.404 | 5.080 | 0.930 | 1 | 0.05 | 0.05 |
+| Random forest (300 trees) | 4.879 ± 0.508 | 4.841 | 5.808 | 0.913 | 1 | 0.35 | 0.35 |
+| LOWESS + random forest on residuals (course setup) | 5.012 ± 0.445 | 4.933 | 6.081 | 0.908 | 1 | 0.11 | 0.11 |
+| Gradient boosting (sklearn defaults) | 5.065 ± 0.353 | 5.124 | 5.710 | 0.907 | 1 | 0.05 | 0.05 |
+| LOWESS boosting, 5 stages (tuned frac) | 6.355 ± 0.334 | 6.258 | 6.915 | 0.853 | 16 | 0.86 | 0.05 |
+| LOWESS (tuned frac) | 6.667 ± 0.355 | 6.653 | 7.390 | 0.838 | 16 | 0.07 | 0.00 |
+| KNN (tuned k) | 8.749 ± 0.372 | 8.797 | 9.353 | 0.722 | 13 | 0.03 | 0.00 |
+| Linear regression | 10.482 ± 0.459 | 10.513 | 11.407 | 0.602 | 1 | 0.00 | 0.00 |
 
 ### California housing (5000-row sample)
 
 n=5000, p=8, target: median value, $100k
 
-| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fit + predict, s/fold |
-|---|---|---|---|---|---|
-| HistGradientBoosting (sklearn defaults) | 0.506 ± 0.025 | 0.499 | 0.541 | 0.805 | 0.07 |
-| Gradient boosting (sklearn defaults) | 0.549 ± 0.025 | 0.545 | 0.583 | 0.770 | 0.42 |
-| Random forest (300 trees) | 0.554 ± 0.026 | 0.548 | 0.596 | 0.766 | 2.75 |
-| KNN (tuned k) | 0.666 ± 0.029 | 0.664 | 0.712 | 0.661 | 0.18 |
-| LOWESS + random forest on residuals (course setup) | 0.849 ± 0.887 | 0.572 | 4.136 | -0.127 | 1.33 |
-| LOWESS boosting, 5 stages (tuned frac) | 0.853 ± 0.840 | 0.609 | 3.984 | -0.073 | 24.31 |
-| LOWESS (tuned frac) | 0.871 ± 0.899 | 0.601 | 4.220 | -0.172 | 1.46 |
-| Linear regression | 1.369 ± 1.423 | 0.729 | 5.762 | -1.896 | 0.00 |
+| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) | Fits per fold | Seconds per fold (all fits) | Seconds per fit (approx.) |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting (sklearn defaults) | 0.506 ± 0.025 | 0.499 | 0.541 | 0.805 | 1 | 0.07 | 0.07 |
+| Gradient boosting (sklearn defaults) | 0.549 ± 0.025 | 0.545 | 0.583 | 0.770 | 1 | 0.42 | 0.42 |
+| Random forest (300 trees) | 0.554 ± 0.026 | 0.548 | 0.596 | 0.766 | 1 | 2.64 | 2.64 |
+| KNN (tuned k) | 0.666 ± 0.029 | 0.664 | 0.712 | 0.661 | 13 | 0.17 | 0.01 |
+| LOWESS + random forest on residuals (course setup) | 0.992 ± 0.917 | 0.587 | 4.148 | -0.360 | 1 | 0.94 | 0.94 |
+| LOWESS (tuned frac) | 1.036 ± 0.882 | 0.645 | 4.070 | -0.381 | 16 | 1.12 | 0.07 |
+| LOWESS boosting, 5 stages (tuned frac) | 1.088 ± 0.987 | 0.682 | 4.524 | -0.612 | 16 | 17.76 | 1.11 |
+| Linear regression | 1.369 ± 1.423 | 0.729 | 5.762 | -1.896 | 1 | 0.00 | 0.00 |
 
 ### Reading the results
 
@@ -248,18 +228,21 @@ n=5000, p=8, target: median value, $100k
   fold-to-fold spread is about 0.4, so no model clearly wins.
 - On concrete strength the tree ensembles win. Five boosting stages take
   LOWESS from 6.67 to 6.36 RMSE, still well behind HistGradientBoosting at
-  4.37. The course setup reaches 5.02, about what the random forest gets on its
+  4.37. The course setup reaches 5.01, about what the random forest gets on its
   own (4.88), so the forest is doing most of the work.
 - On the California sample the tree ensembles win again. The three LOWESS
-  models have a median fold RMSE between 0.57 and 0.61, but one fold scores
-  about 4. That fold's test set contains a block group whose average occupancy
-  is 1,243 (the training maximum is 41). LOWESS extends the local linear fit
-  out to it and predicts 133 for a true value of 1.4. Linear regression has
-  three bad folds, that one included. KNN and the tree ensembles build
-  predictions from averages of training targets or residuals, so an extreme
-  input cannot push them far outside the training range.
-- Cost: the boosting model takes 24 s per fold on 4,000 training rows.
-  HistGradientBoosting takes 0.07 s.
+  models have a median fold RMSE between 0.59 and 0.68, and each has one fold
+  at 4.1 to 4.5. That fold's test set contains a block group whose average
+  occupancy is 1,243 (the training maximum is 41). LOWESS extends the local
+  linear fit out to it and predicts 129 for a true value of 1.4. Tuned LOWESS
+  has three more folds between 1.0 and 1.75. Linear regression also has three
+  bad folds, that one included. KNN and the tree ensembles build predictions
+  from averages of training targets or residuals, so an extreme input cannot
+  push them far outside the training range.
+- Cost: the tuned rows refit 16 times per fold (5 grid values x 3 inner folds,
+  plus the refit), so compare the per-fit column. One boosting fit on the
+  California sample takes about 1.1 s; one HistGradientBoosting fit takes
+  0.07 s.
 
 ## Limitations
 
@@ -267,8 +250,9 @@ n=5000, p=8, target: median value, $100k
   `O(n_queries * n_train * n_features^2)`. With `robust_iters=0`, fitting
   only validates and stores the data. Robustifying iterations and every
   boosting stage refit at all training points, which costs `O(n_train^2)`.
-- The solver precomputes an `n_train x (n_features + 1)^2` array. With 50
-  features and 20,000 rows that is about 400 MB.
+- Each `predict` call builds an `n_train x (n_features + 1)^2` array. With
+  20,000 training rows, peak memory measured with `tracemalloc` was about
+  140 MB for 8 features and 540 MB for 50.
 - Neighbourhoods are Euclidean balls with no feature weighting, so every
   feature counts equally in the distance and irrelevant features dilute the
   neighbourhood. As the number of features grows, a fixed share of the data
@@ -278,7 +262,7 @@ n=5000, p=8, target: median value, $100k
   multi-output targets or classification.
 - Local linear fits extrapolate linearly. A query far outside the training
   data gets its neighbourhood's slope extended out to it, which is how one
-  extreme California row produced a prediction 100 times too large (see
+  extreme California row produced a prediction about 90 times too large (see
   Benchmarks). Clip or transform heavy-tailed features first.
 - On the two larger benchmark datasets, scikit-learn's tree ensembles are
   more accurate and much faster. LOWESS was competitive only on Auto MPG, the
@@ -303,7 +287,7 @@ This package started as coursework for DATA 441 (Advanced Applied Machine
 Learning) at William & Mary. The robustifying iterations follow the structure
 of Alexandre Gramfort's
 [univariate LOWESS gist](https://gist.github.com/agramfort/850437) (BSD
-3-clause). See [NOTICE](NOTICE) for the license text.
+3-clause). See [NOTICE](https://github.com/Siyuan-Zhu/lowess-boosting-from-scratch/blob/main/NOTICE) for the license text.
 
 References:
 
@@ -316,4 +300,4 @@ References:
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/Siyuan-Zhu/lowess-boosting-from-scratch/blob/main/LICENSE).

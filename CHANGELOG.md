@@ -11,10 +11,11 @@ All notable changes to this project are documented here. The format follows
 - `LowessRegressor`: multivariate local linear regression with tricubic,
   Epanechnikov, quartic and gaussian kernels, a nearest-neighbour span (`frac`)
   or a fixed `bandwidth`, Cleveland's bisquare robustifying iterations and a
-  slope-only ridge penalty.
+  unit-free ridge penalty on the local slopes.
 - `LowessBoostingRegressor`: least-squares gradient boosting with any
   regressor as the base learner (LOWESS by default), shrinkage, row
   subsampling, an optional residual estimator and `staged_predict`.
 - Both estimators pass `sklearn.utils.estimator_checks.parametrize_with_checks`.
+- Agreement test against statsmodels' `lowess` (optional `statsmodels` extra).
 - Benchmark script comparing against scikit-learn models with repeated K-fold
   cross-validation.
