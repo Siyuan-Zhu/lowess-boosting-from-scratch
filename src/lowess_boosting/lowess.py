@@ -27,12 +27,18 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     ----------
     frac : float, default=1/3
         Fraction of the training set in each local neighbourhood, in (0, 1].
-        Larger values give smoother fits.
+        Larger values give smoother fits. Ignored when ``bandwidth`` is set.
+    bandwidth : float or None, default=None
+        Fixed kernel width ``h`` in feature units, shared by all query points.
+        When None (the default), each query uses the adaptive nearest-neighbour
+        width set by ``frac``. A fixed width corresponds to ``2 * tau`` in the
+        course notebook this package started from.
     kernel : {"tricubic", "epanechnikov", "quartic", "gaussian"}, \
             default="tricubic"
         Weight function of the scaled distance ``u = d / h``. The first three
         are zero for ``u >= 1``. The gaussian ``exp(-u**2 / 2)`` is cut off
-        outside the neighbourhood (``u > 1``).
+        outside the neighbourhood (``u > 1``) in ``frac`` mode and beyond
+        ``u > 4`` in ``bandwidth`` mode.
     robust_iters : int, default=0
         Number of Cleveland (1979) robustifying iterations. Each one refits at
         the training points, computes bisquare weights from the residuals and
@@ -48,7 +54,8 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     n_features_in_ : int
         Number of features seen during :meth:`fit`.
     n_neighbors_ : int
-        Neighbourhood size ``ceil(frac * n_samples)``.
+        Neighbourhood size ``ceil(frac * n_samples)`` (unused when
+        ``bandwidth`` is set).
     robustness_weights_ : ndarray of shape (n_samples,)
         Bisquare weights from the last robustifying iteration (all ones when
         ``robust_iters=0``).
@@ -63,8 +70,9 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     Robustifying iterations add the same cost with ``n_queries = n_samples``
     at fit time.
 
-    If a query has no positively weighted training point in its window (for
-    example when robustness weights zero out a whole neighbourhood), its
+    If a query has no positively weighted training point in its window (a
+    fixed ``bandwidth`` far from the data, or robustness weights that zero out
+    a whole neighbourhood), its
     prediction is the mean target of the nearest training points that still
     have positive robustness weight.
 
@@ -84,8 +92,16 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     0.97
     """
 
-    def __init__(self, frac=1 / 3, kernel="tricubic", robust_iters=0, ridge=1e-3):
+    def __init__(
+        self,
+        frac=1 / 3,
+        bandwidth=None,
+        kernel="tricubic",
+        robust_iters=0,
+        ridge=1e-3,
+    ):
         self.frac = frac
+        self.bandwidth = bandwidth
         self.kernel = kernel
         self.robust_iters = robust_iters
         self.ridge = ridge
@@ -140,9 +156,10 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             self.y_fit_,
             X,
             self.robustness_weights_,
-            n_neighbors=self.n_neighbors_,
             kernel=self.kernel,
             ridge=self.ridge,
+            n_neighbors=None if self.bandwidth is not None else self.n_neighbors_,
+            bandwidth=self.bandwidth,
         )
 
     def _check_params(self):
@@ -159,6 +176,12 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
         ):
             raise ValueError(
                 f"robust_iters must be a non-negative int, got {self.robust_iters!r}."
+            )
+        if self.bandwidth is not None and (
+            not isinstance(self.bandwidth, numbers.Real) or not self.bandwidth > 0
+        ):
+            raise ValueError(
+                f"bandwidth must be None or a float > 0, got {self.bandwidth!r}."
             )
         if not isinstance(self.ridge, numbers.Real) or not self.ridge >= 0:
             raise ValueError(f"ridge must be a float >= 0, got {self.ridge!r}.")

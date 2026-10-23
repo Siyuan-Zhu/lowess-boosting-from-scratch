@@ -109,3 +109,41 @@ def test_without_robust_iterations_all_points_keep_unit_weight():
     model = LowessRegressor(frac=0.5).fit(X, y)
 
     np.testing.assert_array_equal(model.robustness_weights_, np.ones(41))
+
+
+def test_fixed_bandwidth_matches_the_hand_computed_tricubic_case():
+    # bandwidth=2 at x=2 gives the same scaled distances as frac=1 above.
+    X = np.arange(5.0).reshape(-1, 1)
+    y = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+
+    model = LowessRegressor(bandwidth=2.0, ridge=0.0).fit(X, y)
+
+    np.testing.assert_allclose(model.predict([[2.0]]), [343 / 599], rtol=1e-12)
+
+
+def test_gaussian_with_fixed_bandwidth_reaches_past_one_bandwidth():
+    # u = [2, 1, 0, 1, 2]; the gaussian is only cut off beyond u = 4.
+    X = np.arange(5.0).reshape(-1, 1)
+    y = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+    w1, w2 = np.exp(-0.5), np.exp(-2.0)
+
+    model = LowessRegressor(bandwidth=1.0, kernel="gaussian", ridge=0.0).fit(X, y)
+
+    np.testing.assert_allclose(
+        model.predict([[2.0]]), [2 * w1 / (1 + 2 * w1 + 2 * w2)], rtol=1e-12
+    )
+
+
+def test_query_with_no_training_point_in_its_window_uses_nearest_neighbours():
+    X = np.array([[0.0], [1.0], [5.0]])
+    y = np.array([1.0, 2.0, 9.0])
+
+    model = LowessRegressor(bandwidth=0.1).fit(X, y)
+
+    np.testing.assert_allclose(model.predict([[4.8], [0.5]]), [9.0, 1.5])
+
+
+@pytest.mark.parametrize("bandwidth", [0.0, -1.0, "wide"])
+def test_invalid_bandwidth_is_rejected(bandwidth):
+    with pytest.raises(ValueError, match="bandwidth"):
+        LowessRegressor(bandwidth=bandwidth).fit([[0.0], [1.0]], [0.0, 1.0])

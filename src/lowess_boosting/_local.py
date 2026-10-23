@@ -36,17 +36,28 @@ KERNELS = {
 }
 
 
+# Kernel argument beyond which weights are set to zero when the bandwidth is a
+# fixed width. In nearest-neighbour mode every kernel is cut off at u = 1.
+_FIXED_WIDTH_CUTOFF = {"gaussian": 4.0}
+
+# Upper bound on the number of entries in one (queries x training points) block.
+_BLOCK_ENTRIES = 2**22
+
+
 def local_linear_predict(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_query: np.ndarray,
     sample_weight: np.ndarray,
     *,
-    n_neighbors: int,
     kernel: str,
     ridge: float,
+    n_neighbors: int | None = None,
+    bandwidth: float | None = None,
 ) -> np.ndarray:
     """Evaluate a kernel-weighted local linear fit at each query point.
+
+    Exactly one of ``n_neighbors`` and ``bandwidth`` must be given.
 
     Parameters
     ----------
@@ -54,44 +65,92 @@ def local_linear_predict(
     y_train : ndarray of shape (n_samples,)
     X_query : ndarray of shape (n_queries, n_features)
     sample_weight : ndarray of shape (n_samples,)
-        Per-training-point weights multiplied into the kernel weights
-        (the robustness weights in LOWESS).
-    n_neighbors : int
-        Size of the neighbourhood that sets each query's bandwidth.
+        Non-negative per-training-point weights multiplied into the kernel
+        weights (the robustness weights in LOWESS).
     kernel : str
         Key of :data:`KERNELS`.
     ridge : float
         L2 penalty on the local slopes (never on the local intercept).
+    n_neighbors : int, optional
+        Each query's bandwidth is the distance to its ``n_neighbors``-th
+        nearest training point.
+    bandwidth : float, optional
+        Fixed bandwidth shared by all queries.
 
     Returns
     -------
     ndarray of shape (n_queries,)
+        Local intercepts, i.e. the fitted values at the query points. Queries
+        whose window holds no positively weighted training point get the mean
+        target of the nearest training points with positive ``sample_weight``.
     """
-    dist = cdist(X_query, X_train)
-    h = np.partition(dist, n_neighbors - 1, axis=1)[:, n_neighbors - 1]
-    u = dist / h[:, None]
-    weights = np.where(u <= 1.0, KERNELS[kernel](u), 0.0) * sample_weight
+    # Centre on the training mean so the uncentred moment sums stay well
+    # conditioned. Slopes, and therefore the slope penalty, are unaffected.
+    offset = X_train.mean(axis=0)
+    X_train = X_train - offset
+    X_query = X_query - offset
 
-    n_features = X_train.shape[1]
+    n_samples, n_features = X_train.shape
+    Z = np.hstack([np.ones((n_samples, 1)), X_train])
+    q = n_features + 1
+    # Row i holds the flattened outer product z_i z_i^T, so that the weighted
+    # normal equations of every query in a block come from two matrix products.
+    ZZ = (Z[:, :, None] * Z[:, None, :]).reshape(n_samples, q * q)
+    Zy = Z * y_train[:, None]
+    penalty = ridge * np.diag(np.r_[0.0, np.ones(n_features)])
+
     out = np.empty(X_query.shape[0])
-    for i in range(X_query.shape[0]):
-        if not weights[i].any():
-            out[i] = _nearest_trusted_mean(dist[i], y_train, sample_weight)
-            continue
-        Z = np.hstack([np.ones((X_train.shape[0], 1)), X_train - X_query[i]])
-        A = Z.T @ (weights[i, :, None] * Z)
-        A[1:, 1:] += ridge * np.eye(n_features)
-        b = Z.T @ (weights[i] * y_train)
-        out[i] = np.linalg.solve(A, b)[0]
+    block = max(1, _BLOCK_ENTRIES // max(n_samples, q * q))
+    for start in range(0, X_query.shape[0], block):
+        Xq = X_query[start : start + block]
+        dist = cdist(Xq, X_train)
+        W = _kernel_weights(dist, kernel, n_neighbors, bandwidth) * sample_weight
+
+        empty = W.sum(axis=1) <= 0.0
+        A = (W @ ZZ).reshape(-1, q, q) + penalty
+        A[empty] = np.eye(q)
+        b = W @ Zy
+        beta = _solve_batched(A, b)
+        pred = beta[:, 0] + np.einsum("ij,ij->i", beta[:, 1:], Xq)
+        if empty.any():
+            pred[empty] = _nearest_trusted_mean(dist[empty], y_train, sample_weight)
+        out[start : start + block] = pred
     return out
 
 
+def _kernel_weights(dist, kernel, n_neighbors, bandwidth):
+    if bandwidth is not None:
+        u = dist / bandwidth
+        cutoff = _FIXED_WIDTH_CUTOFF.get(kernel, 1.0)
+    else:
+        h = np.partition(dist, n_neighbors - 1, axis=1)[
+            :, n_neighbors - 1 : n_neighbors
+        ]
+        # h == 0 when at least n_neighbors training points coincide with the
+        # query: those points get full weight and everything else none.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            u = np.where(
+                h > 0, dist / np.where(h > 0, h, 1.0), np.where(dist > 0, np.inf, 0.0)
+            )
+        cutoff = 1.0
+    return np.where(u <= cutoff, KERNELS[kernel](np.minimum(u, cutoff)), 0.0)
+
+
+def _solve_batched(A, b):
+    try:
+        return np.linalg.solve(A, b[:, :, None])[:, :, 0]
+    except np.linalg.LinAlgError:
+        # Only reachable with ridge=0 and a degenerate neighbourhood; the
+        # minimum-norm solution sets the unidentified slopes to zero.
+        return (np.linalg.pinv(A, hermitian=True) @ b[:, :, None])[:, :, 0]
+
+
 def _nearest_trusted_mean(dist, y_train, sample_weight):
-    """Mean response of the nearest training points with positive weight."""
-    d = np.where(sample_weight > 0, dist, np.inf)
-    if not np.isfinite(d).any():
-        d = dist
-    return float(y_train[d == d.min()].mean())
+    """Mean target of each row's nearest training points with positive weight."""
+    if (sample_weight > 0).any():
+        dist = np.where(sample_weight > 0, dist, np.inf)
+    nearest = dist == dist.min(axis=1, keepdims=True)
+    return (nearest @ y_train) / nearest.sum(axis=1)
 
 
 def bisquare_robustness_weights(residuals: np.ndarray, scale: float) -> np.ndarray:
