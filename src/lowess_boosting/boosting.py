@@ -5,8 +5,10 @@ from __future__ import annotations
 import numbers
 from collections import deque
 from collections.abc import Iterator
+from typing import Any
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted, validate_data
@@ -90,13 +92,13 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
 
     def __init__(
         self,
-        estimator=None,
-        n_estimators=5,
-        learning_rate=0.5,
-        subsample=1.0,
-        residual_estimator=None,
-        random_state=None,
-    ):
+        estimator: Any = None,
+        n_estimators: int = 5,
+        learning_rate: float = 0.5,
+        subsample: float = 1.0,
+        residual_estimator: Any = None,
+        random_state: int | np.random.RandomState | None = None,
+    ) -> None:
         self.estimator = estimator
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
@@ -104,7 +106,7 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
         self.residual_estimator = residual_estimator
         self.random_state = random_state
 
-    def fit(self, X, y):
+    def fit(self, X: ArrayLike, y: ArrayLike) -> LowessBoostingRegressor:
         """Fit the boosting stages and the optional residual estimator.
 
         Parameters
@@ -120,13 +122,13 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
             Fitted estimator.
         """
         self._check_params()
-        X, y = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
         rng = check_random_state(self.random_state)
-        n_samples = X.shape[0]
+        n_samples = X_fit.shape[0]
         n_rows = max(1, int(self.subsample * n_samples))
         base = LowessRegressor() if self.estimator is None else self.estimator
 
-        self.init_ = float(np.mean(y))
+        self.init_ = float(np.mean(y_fit))
         current = np.full(n_samples, self.init_)
         self.estimators_ = []
         self.train_score_ = np.empty(self.n_estimators)
@@ -137,18 +139,18 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
                 else slice(None)
             )
             learner = _seeded_clone(base, rng)
-            learner.fit(X[rows], (y - current)[rows])
-            current = current + self.learning_rate * learner.predict(X)
+            learner.fit(X_fit[rows], (y_fit - current)[rows])
+            current = current + self.learning_rate * learner.predict(X_fit)
             self.estimators_.append(learner)
-            self.train_score_[stage] = np.mean((y - current) ** 2)
+            self.train_score_[stage] = np.mean((y_fit - current) ** 2)
 
         self.residual_estimator_ = None
         if self.residual_estimator is not None:
             self.residual_estimator_ = _seeded_clone(self.residual_estimator, rng)
-            self.residual_estimator_.fit(X, y - current)
+            self.residual_estimator_.fit(X_fit, y_fit - current)
         return self
 
-    def predict(self, X):
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
         """Predict targets as the sum of all stages.
 
         Parameters
@@ -163,7 +165,7 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
         """
         return deque(self.staged_predict(X), maxlen=1)[0]
 
-    def staged_predict(self, X) -> Iterator[np.ndarray]:
+    def staged_predict(self, X: ArrayLike) -> Iterator[NDArray[np.float64]]:
         """Yield predictions after each stage.
 
         Yields one array per boosting stage and, when a residual estimator was
@@ -181,15 +183,15 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
             Predicted targets after the stage.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, dtype=np.float64, reset=False)
-        pred = np.full(X.shape[0], self.init_)
+        X_query = validate_data(self, X, dtype=np.float64, reset=False)
+        pred = np.full(X_query.shape[0], self.init_)
         for learner in self.estimators_:
-            pred = pred + self.learning_rate * learner.predict(X)
+            pred = pred + self.learning_rate * learner.predict(X_query)
             yield pred
         if self.residual_estimator_ is not None:
-            yield pred + self.residual_estimator_.predict(X)
+            yield pred + self.residual_estimator_.predict(X_query)
 
-    def _check_params(self):
+    def _check_params(self) -> None:
         if (
             not isinstance(self.n_estimators, numbers.Integral)
             or isinstance(self.n_estimators, bool)
@@ -219,7 +221,7 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
                 )
 
 
-def _seeded_clone(estimator, rng):
+def _seeded_clone(estimator: Any, rng: np.random.RandomState) -> Any:
     """Clone ``estimator`` and seed every unset ``random_state`` from ``rng``."""
     learner = clone(estimator)
     unset = {

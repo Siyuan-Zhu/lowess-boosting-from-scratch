@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import math
 import numbers
+from typing import Literal
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_is_fitted, validate_data
 
@@ -94,19 +96,19 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
 
     def __init__(
         self,
-        frac=1 / 3,
-        bandwidth=None,
-        kernel="tricubic",
-        robust_iters=0,
-        ridge=1e-3,
-    ):
+        frac: float = 1 / 3,
+        bandwidth: float | None = None,
+        kernel: Literal["tricubic", "epanechnikov", "quartic", "gaussian"] = "tricubic",
+        robust_iters: int = 0,
+        ridge: float = 1e-3,
+    ) -> None:
         self.frac = frac
         self.bandwidth = bandwidth
         self.kernel = kernel
         self.robust_iters = robust_iters
         self.ridge = ridge
 
-    def fit(self, X, y):
+    def fit(self, X: ArrayLike, y: ArrayLike) -> LowessRegressor:
         """Store the training data and compute robustness weights.
 
         Parameters
@@ -122,18 +124,18 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             Fitted estimator.
         """
         self._check_params()
-        X, y = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
-        self.X_fit_ = X
-        self.y_fit_ = y
-        self.n_neighbors_ = max(1, math.ceil(self.frac * X.shape[0]))
-        self.robustness_weights_ = np.ones(X.shape[0])
-        scale = float(np.max(np.abs(y)))
+        X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        self.X_fit_ = X_fit
+        self.y_fit_ = y_fit
+        self.n_neighbors_ = max(1, math.ceil(self.frac * X_fit.shape[0]))
+        self.robustness_weights_ = np.ones(X_fit.shape[0])
+        scale = float(np.max(np.abs(y_fit)))
         for _ in range(self.robust_iters):
-            residuals = y - self._local_fit(X)
+            residuals = y_fit - self._local_fit(X_fit)
             self.robustness_weights_ = bisquare_robustness_weights(residuals, scale)
         return self
 
-    def predict(self, X):
+    def predict(self, X: ArrayLike) -> NDArray[np.float64]:
         """Predict targets with a local linear fit at each row of ``X``.
 
         Parameters
@@ -147,10 +149,9 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             Predicted targets.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, dtype=np.float64, reset=False)
-        return self._local_fit(X)
+        return self._local_fit(validate_data(self, X, dtype=np.float64, reset=False))
 
-    def _local_fit(self, X):
+    def _local_fit(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
         return local_linear_predict(
             self.X_fit_,
             self.y_fit_,
@@ -162,7 +163,7 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             bandwidth=self.bandwidth,
         )
 
-    def _check_params(self):
+    def _check_params(self) -> None:
         if self.kernel not in KERNELS:
             raise ValueError(
                 f"kernel must be one of {sorted(KERNELS)}, got {self.kernel!r}."

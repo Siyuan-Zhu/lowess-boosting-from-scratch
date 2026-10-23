@@ -117,14 +117,16 @@ def local_linear_predict(
     return out
 
 
-def _kernel_weights(dist, kernel, n_neighbors, bandwidth):
+def _kernel_weights(
+    dist: np.ndarray, kernel: str, n_neighbors: int | None, bandwidth: float | None
+) -> np.ndarray:
     if bandwidth is not None:
         u = dist / bandwidth
         cutoff = _FIXED_WIDTH_CUTOFF.get(kernel, 1.0)
     else:
-        h = np.partition(dist, n_neighbors - 1, axis=1)[
-            :, n_neighbors - 1 : n_neighbors
-        ]
+        assert n_neighbors is not None
+        k = n_neighbors - 1
+        h = np.partition(dist, k, axis=1)[:, k : k + 1]
         # h == 0 when at least n_neighbors training points coincide with the
         # query: those points get full weight and everything else none.
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -135,7 +137,7 @@ def _kernel_weights(dist, kernel, n_neighbors, bandwidth):
     return np.where(u <= cutoff, KERNELS[kernel](np.minimum(u, cutoff)), 0.0)
 
 
-def _solve_intercepts(A, b, Xq):
+def _solve_intercepts(A: np.ndarray, b: np.ndarray, Xq: np.ndarray) -> np.ndarray:
     """Fitted value at each query from its normal equations ``A beta = b``."""
     try:
         beta = np.linalg.solve(A, b[:, :, None])[:, :, 0]
@@ -156,7 +158,9 @@ def _solve_intercepts(A, b, Xq):
         return mean_y + np.einsum("ij,ij->i", slopes, Xq - mean_x)
 
 
-def _nearest_trusted_mean(dist, y_train, sample_weight):
+def _nearest_trusted_mean(
+    dist: np.ndarray, y_train: np.ndarray, sample_weight: np.ndarray
+) -> np.ndarray:
     """Mean target of each row's nearest training points with positive weight."""
     # If no point had positive weight every distance is inf, so every point
     # ties as nearest and the result is the overall mean.
