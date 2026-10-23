@@ -40,6 +40,7 @@ def local_linear_predict(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_query: np.ndarray,
+    sample_weight: np.ndarray,
     *,
     n_neighbors: int,
     kernel: str,
@@ -52,6 +53,9 @@ def local_linear_predict(
     X_train : ndarray of shape (n_samples, n_features)
     y_train : ndarray of shape (n_samples,)
     X_query : ndarray of shape (n_queries, n_features)
+    sample_weight : ndarray of shape (n_samples,)
+        Per-training-point weights multiplied into the kernel weights
+        (the robustness weights in LOWESS).
     n_neighbors : int
         Size of the neighbourhood that sets each query's bandwidth.
     kernel : str
@@ -66,14 +70,39 @@ def local_linear_predict(
     dist = cdist(X_query, X_train)
     h = np.partition(dist, n_neighbors - 1, axis=1)[:, n_neighbors - 1]
     u = dist / h[:, None]
-    weights = np.where(u <= 1.0, KERNELS[kernel](u), 0.0)
+    weights = np.where(u <= 1.0, KERNELS[kernel](u), 0.0) * sample_weight
 
     n_features = X_train.shape[1]
     out = np.empty(X_query.shape[0])
     for i in range(X_query.shape[0]):
+        if not weights[i].any():
+            out[i] = _nearest_trusted_mean(dist[i], y_train, sample_weight)
+            continue
         Z = np.hstack([np.ones((X_train.shape[0], 1)), X_train - X_query[i]])
         A = Z.T @ (weights[i, :, None] * Z)
         A[1:, 1:] += ridge * np.eye(n_features)
         b = Z.T @ (weights[i] * y_train)
         out[i] = np.linalg.solve(A, b)[0]
     return out
+
+
+def _nearest_trusted_mean(dist, y_train, sample_weight):
+    """Mean response of the nearest training points with positive weight."""
+    d = np.where(sample_weight > 0, dist, np.inf)
+    if not np.isfinite(d).any():
+        d = dist
+    return float(y_train[d == d.min()].mean())
+
+
+def bisquare_robustness_weights(residuals: np.ndarray, scale: float) -> np.ndarray:
+    """Cleveland's bisquare robustness weights from fit residuals.
+
+    Residuals larger than six median absolute residuals get weight zero.
+    ``scale`` sets a floor on the median absolute residual so that an exact
+    fit (median residual at round-off level) does not turn round-off into
+    outliers.
+    """
+    s = max(float(np.median(np.abs(residuals))), 1e-12 * scale)
+    if s == 0.0:
+        return np.ones_like(residuals)
+    return np.clip(1.0 - (residuals / (6.0 * s)) ** 2, 0.0, None) ** 2

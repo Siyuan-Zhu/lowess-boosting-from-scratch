@@ -81,3 +81,31 @@ def test_each_kernel_weights_the_neighbourhood_as_documented(kernel, expected):
 def test_unknown_kernel_is_rejected_at_fit():
     with pytest.raises(ValueError, match="kernel"):
         LowessRegressor(kernel="boxcar").fit([[0.0], [1.0]], [0.0, 1.0])
+
+
+def _line_with_one_outlier():
+    rng = np.random.default_rng(42)
+    X = np.linspace(0, 20, 41).reshape(-1, 1)
+    y = 2.0 * X.ravel() + rng.normal(scale=0.5, size=41)
+    y[20] += 100.0  # x = 10
+    return X, y
+
+
+def test_robustifying_iterations_ignore_a_gross_outlier():
+    X, y = _line_with_one_outlier()
+
+    plain = LowessRegressor(frac=0.5, robust_iters=0).fit(X, y)
+    robust = LowessRegressor(frac=0.5, robust_iters=2).fit(X, y)
+
+    assert abs(plain.predict([[10.0]])[0] - 20.0) > 5.0
+    assert abs(robust.predict([[10.0]])[0] - 20.0) < 1.0
+    assert robust.robustness_weights_[20] == 0.0
+    assert np.median(np.delete(robust.robustness_weights_, 20)) > 0.8
+
+
+def test_without_robust_iterations_all_points_keep_unit_weight():
+    X, y = _line_with_one_outlier()
+
+    model = LowessRegressor(frac=0.5).fit(X, y)
+
+    np.testing.assert_array_equal(model.robustness_weights_, np.ones(41))
