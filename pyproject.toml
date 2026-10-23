@@ -44,8 +44,8 @@ packages = ["src/lowess_boosting"]
 include = ["src", "tests", "benchmarks", "README.md", "CHANGELOG.md", "LICENSE", "NOTICE"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-ra"
+testpaths = ["tests", "src"]
+addopts = "-ra --doctest-modules"
 
 [tool.coverage.run]
 source = ["lowess_boosting"]
