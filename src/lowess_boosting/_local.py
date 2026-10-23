@@ -158,8 +158,9 @@ def _solve_intercepts(A, b, Xq):
 
 def _nearest_trusted_mean(dist, y_train, sample_weight):
     """Mean target of each row's nearest training points with positive weight."""
-    if (sample_weight > 0).any():
-        dist = np.where(sample_weight > 0, dist, np.inf)
+    # If no point had positive weight every distance is inf, so every point
+    # ties as nearest and the result is the overall mean.
+    dist = np.where(sample_weight > 0, dist, np.inf)
     nearest = dist == dist.min(axis=1, keepdims=True)
     return (nearest @ y_train) / nearest.sum(axis=1)
 

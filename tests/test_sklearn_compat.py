@@ -8,12 +8,25 @@ from sklearn.base import clone
 from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
-from lowess_boosting import LowessRegressor
+from lowess_boosting import LowessBoostingRegressor, LowessRegressor
+
+ESTIMATORS = [
+    LowessRegressor(),
+    LowessRegressor(robust_iters=2),
+    LowessRegressor(bandwidth=1.0, kernel="gaussian"),
+    LowessBoostingRegressor(),
+    LowessBoostingRegressor(
+        LowessRegressor(frac=0.5),
+        subsample=0.7,
+        residual_estimator=DecisionTreeRegressor(max_depth=3),
+    ),
+]
 
 
-@parametrize_with_checks([LowessRegressor(), LowessRegressor(robust_iters=2)])
+@parametrize_with_checks(ESTIMATORS)
 def test_sklearn_estimator_checks(estimator, check):
     check(estimator)
 
