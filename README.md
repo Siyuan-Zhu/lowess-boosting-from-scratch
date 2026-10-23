@@ -7,7 +7,7 @@ work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
 
 The only runtime dependencies are numpy, scipy and scikit-learn.
 
-![Per-fold RMSE of each model on three datasets, relative to the best model's mean RMSE](https://raw.githubusercontent.com/Siyuan-Zhu/lowess-boosting-from-scratch/main/benchmarks/results/rmse.png)
+![Per-fold RMSE of each model on three datasets, relative to the best model's mean RMSE](benchmarks/results/rmse.png)
 
 Per-fold RMSE on three public datasets, relative to the best model on each
 (15 folds; details under [Benchmarks](#benchmarks)). LOWESS is competitive on
