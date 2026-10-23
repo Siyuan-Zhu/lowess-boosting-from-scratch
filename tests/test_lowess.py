@@ -51,3 +51,33 @@ def test_reproduces_a_plane_in_three_dimensions():
     pred = LowessRegressor(frac=0.4, ridge=0.0).fit(X, y).predict(X_new)
 
     np.testing.assert_allclose(pred, 0.7 + X_new @ coef, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("kernel", "expected"),
+    [
+        # Same symmetric setup as above; u = |x - 2| / 2 = [1, .5, 0, .5, 1].
+        ("tricubic", 343 / 599),
+        # Epanechnikov: K(.5)/K(0) = 0.75 and K(1) = 0 -> 1.5 / 2.5.
+        ("epanechnikov", 0.6),
+        # Quartic: K(.5)/K(0) = 0.5625 and K(1) = 0 -> 1.125 / 2.125.
+        ("quartic", 9 / 17),
+        # Gaussian keeps the boundary point: weights exp(-u^2 / 2) for u <= 1.
+        (
+            "gaussian",
+            2 * np.exp(-0.125) / (1 + 2 * np.exp(-0.125) + 2 * np.exp(-0.5)),
+        ),
+    ],
+)
+def test_each_kernel_weights_the_neighbourhood_as_documented(kernel, expected):
+    X = np.arange(5.0).reshape(-1, 1)
+    y = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+
+    model = LowessRegressor(frac=1.0, kernel=kernel, ridge=0.0).fit(X, y)
+
+    np.testing.assert_allclose(model.predict([[2.0]]), [expected], rtol=1e-12)
+
+
+def test_unknown_kernel_is_rejected_at_fit():
+    with pytest.raises(ValueError, match="kernel"):
+        LowessRegressor(kernel="boxcar").fit([[0.0], [1.0]], [0.0, 1.0])

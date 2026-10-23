@@ -12,7 +12,28 @@ from scipy.spatial.distance import cdist
 
 
 def _tricubic(u: np.ndarray) -> np.ndarray:
-    return np.where(u < 1.0, (1.0 - u**3) ** 3, 0.0)
+    return np.clip(1.0 - u**3, 0.0, None) ** 3
+
+
+def _epanechnikov(u: np.ndarray) -> np.ndarray:
+    return np.clip(1.0 - u**2, 0.0, None)
+
+
+def _quartic(u: np.ndarray) -> np.ndarray:
+    return np.clip(1.0 - u**2, 0.0, None) ** 2
+
+
+def _gaussian(u: np.ndarray) -> np.ndarray:
+    return np.exp(-0.5 * u**2)
+
+
+# Normalising constants are dropped: they cancel in weighted least squares.
+KERNELS = {
+    "tricubic": _tricubic,
+    "epanechnikov": _epanechnikov,
+    "quartic": _quartic,
+    "gaussian": _gaussian,
+}
 
 
 def local_linear_predict(
@@ -21,6 +42,7 @@ def local_linear_predict(
     X_query: np.ndarray,
     *,
     n_neighbors: int,
+    kernel: str,
     ridge: float,
 ) -> np.ndarray:
     """Evaluate a kernel-weighted local linear fit at each query point.
@@ -32,6 +54,8 @@ def local_linear_predict(
     X_query : ndarray of shape (n_queries, n_features)
     n_neighbors : int
         Size of the neighbourhood that sets each query's bandwidth.
+    kernel : str
+        Key of :data:`KERNELS`.
     ridge : float
         L2 penalty on the local slopes (never on the local intercept).
 
@@ -41,7 +65,8 @@ def local_linear_predict(
     """
     dist = cdist(X_query, X_train)
     h = np.partition(dist, n_neighbors - 1, axis=1)[:, n_neighbors - 1]
-    weights = _tricubic(dist / h[:, None])
+    u = dist / h[:, None]
+    weights = np.where(u <= 1.0, KERNELS[kernel](u), 0.0)
 
     n_features = X_train.shape[1]
     out = np.empty(X_query.shape[0])
