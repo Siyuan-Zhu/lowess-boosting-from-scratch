@@ -149,6 +149,10 @@ def test_single_neighbour_predictions_are_training_targets():
         ({"frac": True}, "frac"),
         ({"ridge": False}, "ridge"),
         ({"bandwidth": True}, "bandwidth"),
+        ({"ridge": float("inf")}, "ridge"),
+        ({"bandwidth": float("inf")}, "bandwidth"),
+        ({"bandwidth": float("nan")}, "bandwidth"),
+        ({"kernel": ["tricubic"]}, "kernel"),
     ],
 )
 def test_invalid_parameters_are_rejected_at_fit(params, match):
@@ -170,8 +174,56 @@ def test_non_finite_inputs_are_rejected(bad):
         model.predict([[bad]])
 
 
+def test_non_numeric_target_is_rejected_with_a_clear_error():
+    with pytest.raises(ValueError, match="numeric"):
+        LowessRegressor().fit([[0.0], [1.0]], ["a", "b"])
+
+
 def test_wrong_number_of_features_at_predict_is_rejected():
     model = LowessRegressor().fit(np.zeros((4, 2)), np.arange(4.0))
 
     with pytest.raises(ValueError, match="features"):
         model.predict(np.zeros((1, 3)))
+
+
+@pytest.mark.parametrize("c", [1e-6, 1e-2, 1.0, 1e3, 1e8])
+def test_predictions_do_not_depend_on_the_units_of_x(c):
+    # Same data in different units: with the default ridge the slope penalty
+    # must scale with the local spread of x, so y = 3x is still recovered.
+    X = np.linspace(0, 0.01, 30).reshape(-1, 1)
+    y = 3.0 * X.ravel() / 0.01
+    Q = np.array([[0.001], [0.0099]])
+
+    base = LowessRegressor(frac=0.3).fit(X, y).predict(Q)
+    pred = LowessRegressor(frac=0.3).fit(X * c, y).predict(Q * c)
+
+    np.testing.assert_allclose(pred, base, rtol=1e-8)
+    # The relative penalty of 1e-3 shrinks the slope by about that much.
+    np.testing.assert_allclose(pred, [0.3, 2.97], rtol=1e-3)
+
+
+@pytest.mark.parametrize("c", [1e-3, 1.0, 7.0, 1e4])
+def test_rank_deficient_neighbourhood_falls_back_the_same_way_at_any_scale(c):
+    # With bandwidth 2 only (0, 0) and (1, 1) are in the window of (.5, .2):
+    # two points cannot identify a plane in 2-D. The slope along the line
+    # through them is identified (y rises 1 per unit of x0 + x1 / 2 each), the
+    # perpendicular slope is set to zero, so the prediction is the projection
+    # of the query onto that line: t = (.5 + .2) / 2 = 0.35.
+    X = np.array([[0.0, 0.0], [1.0, 1.0], [5.0, 5.0], [9.0, 0.0]])
+    y = np.array([0.0, 1.0, 7.0, 3.0])
+
+    model = LowessRegressor(bandwidth=2.0 * c, ridge=0.0).fit(X * c, y)
+
+    np.testing.assert_allclose(model.predict(np.array([[0.5, 0.2]]) * c), [0.35])
+
+
+def test_huge_feature_values_do_not_overflow():
+    rng = np.random.default_rng(7)
+    X = rng.normal(size=(40, 2))
+    y = np.sin(X[:, 0]) + X[:, 1]
+    Q = rng.normal(size=(5, 2))
+
+    base = LowessRegressor(frac=0.4).fit(X, y).predict(Q)
+    huge = LowessRegressor(frac=0.4).fit(X * 1e154, y).predict(Q * 1e154)
+
+    np.testing.assert_allclose(huge, base, rtol=1e-8)

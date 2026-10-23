@@ -44,9 +44,13 @@ def test_two_stage_model_from_the_course_project():
         lowess, n_estimators=1, learning_rate=1.0, residual_estimator=forest
     ).fit(X, y)
 
-    first = LowessRegressor(frac=1 / 6).fit(X, y)
-    second = clone(forest).fit(X, y - first.predict(X))
-    expected = first.predict(X[:10]) + second.predict(X[:10])
+    # The booster starts from mean(y); LOWESS on centred y plus the mean is
+    # plain LOWESS (test above). Composing the same way keeps the forest's
+    # input identical, since tree splits react to round-off differences.
+    first = LowessRegressor(frac=1 / 6).fit(X, y - y.mean())
+    lowess_part = y.mean() + first.predict(X)
+    second = clone(forest).fit(X, y - lowess_part)
+    expected = y.mean() + first.predict(X[:10]) + second.predict(X[:10])
     np.testing.assert_allclose(boosted.predict(X[:10]), expected, rtol=1e-9)
 
 
@@ -59,8 +63,10 @@ def test_more_stages_fit_the_training_data_more_closely():
     single_stage_mse = np.mean(
         (y - LowessRegressor(frac=0.5).fit(X, y).predict(X)) ** 2
     )
+    # Stage-to-stage training error need not fall monotonically for a
+    # non-symmetric smoother, so only the overall drop is asserted.
     assert model.train_score_[-1] < 0.5 * single_stage_mse
-    assert np.all(np.diff(model.train_score_) < 0)
+    assert model.train_score_[-1] < model.train_score_[0]
 
 
 def test_staged_predict_ends_at_predict_and_matches_train_score():
@@ -136,6 +142,7 @@ def test_any_regressor_can_be_the_base_learner():
         ({"subsample": 2}, ValueError, "subsample"),
         ({"learning_rate": True}, ValueError, "learning_rate"),
         ({"subsample": True}, ValueError, "subsample"),
+        ({"learning_rate": float("nan")}, ValueError, "learning_rate"),
         ({"estimator": "lowess"}, TypeError, "estimator"),
         ({"residual_estimator": 3}, TypeError, "residual_estimator"),
     ],
@@ -155,3 +162,8 @@ def test_nested_parameters_are_tunable_with_grid_search():
     search = GridSearchCV(pipe, grid, cv=3).fit(X, y)
 
     assert search.best_params_["lowessboostingregressor__estimator__frac"] == 0.2
+
+
+def test_non_numeric_target_is_rejected_with_a_clear_error():
+    with pytest.raises(ValueError, match="numeric"):
+        LowessBoostingRegressor().fit([[0.0], [1.0]], ["a", "b"])

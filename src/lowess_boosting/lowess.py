@@ -11,6 +11,8 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 
 from ._local import KERNELS, bisquare_robustness_weights, local_linear_predict
 from ._validation import (
+    as_numeric_target,
+    check_choice,
     check_fraction,
     check_int,
     check_non_negative,
@@ -38,25 +40,29 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     bandwidth : float or None, default=None
         Fixed kernel width ``h`` in feature units, shared by all query points.
         When None (the default), each query uses the adaptive nearest-neighbour
-        width set by ``frac``. A fixed width corresponds to ``2 * tau`` in the
-        course notebook this package started from.
+        width set by ``frac``.
     kernel : {"tricubic", "epanechnikov", "quartic", "gaussian"}, \
             default="tricubic"
         Weight function of the scaled distance ``u = d / h``. The first three
         are zero for ``u >= 1``. The gaussian ``exp(-u**2 / 2)`` is cut off
         outside the neighbourhood (``u > 1``) in ``frac`` mode and beyond
-        ``u > 4`` in ``bandwidth`` mode.
+        ``u > 4`` in ``bandwidth`` mode. In ``frac`` mode the gaussian still
+        weighs ``exp(-1/2) = 0.61`` at the edge, so the fit can jump when a
+        point enters or leaves the neighbourhood; the compact kernels fall
+        smoothly to zero there.
     robust_iters : int, default=0
         Number of Cleveland (1979) robustifying iterations. Each one refits at
         the training points, computes bisquare weights from the residuals and
         multiplies them into the kernel weights, so points with residuals above
         six median absolute residuals stop influencing the fit.
     ridge : float, default=1e-3
-        L2 penalty on the local slopes. The local intercept (the prediction) is
-        not penalised. A small positive value keeps the local systems solvable
-        when a neighbourhood has fewer distinct points than ``n_features + 1``.
-        With ``ridge=0``, nearly collinear neighbourhoods can give unstable
-        local slopes.
+        Relative L2 penalty on the local slopes: each slope is penalised by
+        ``ridge`` times its feature's weighted scatter in the neighbourhood,
+        which is ridge regression on locally standardised features. Results
+        therefore do not depend on the units of ``X``. The local intercept
+        (the prediction) is not penalised. Slope directions the neighbourhood
+        does not span (fewer distinct points than ``n_features + 1``) are set
+        to zero for any ``ridge``, including 0.
 
     Attributes
     ----------
@@ -77,13 +83,14 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
     -----
     Prediction costs ``O(n_queries * n_samples * n_features**2)`` time.
     Robustifying iterations add the same cost with ``n_queries = n_samples``
-    at fit time.
+    at fit time. Each prediction call builds an
+    ``n_samples x (n_features + 1)**2`` array: about 140 MB peak with 20,000
+    training rows and 8 features, and 540 MB with 50 features.
 
     If a query has no positively weighted training point in its window (a
     fixed ``bandwidth`` far from the data, or robustness weights that zero out
-    a whole neighbourhood), its
-    prediction is the mean target of the nearest training points that still
-    have positive robustness weight.
+    a whole neighbourhood), its prediction is the mean target of the nearest
+    training points that still have positive robustness weight.
 
     References
     ----------
@@ -131,7 +138,8 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
             Fitted estimator.
         """
         self._check_params()
-        X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        X_fit, y_raw = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        y_fit = as_numeric_target(y_raw)
         self.X_fit_ = X_fit
         self.y_fit_ = y_fit
         self.n_neighbors_ = count_of(self.frac, X_fit.shape[0])
@@ -171,10 +179,7 @@ class LowessRegressor(RegressorMixin, BaseEstimator):
         )
 
     def _check_params(self) -> None:
-        if self.kernel not in KERNELS:
-            raise ValueError(
-                f"kernel must be one of {sorted(KERNELS)}, got {self.kernel!r}."
-            )
+        check_choice("kernel", self.kernel, KERNELS)
         check_fraction("frac", self.frac)
         check_int("robust_iters", self.robust_iters, low=0)
         check_positive_or_none("bandwidth", self.bandwidth)

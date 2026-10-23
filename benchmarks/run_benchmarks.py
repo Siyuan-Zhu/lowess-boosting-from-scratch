@@ -29,7 +29,7 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import GridSearchCV, KFold, RepeatedKFold
+from sklearn.model_selection import GridSearchCV, KFold, ParameterGrid, RepeatedKFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -126,6 +126,13 @@ def build_models(seed):
 # ------------------------------------------------------------------------ running
 
 
+def fits_per_fold(model):
+    """Model fits behind one outer fold: grid x inner folds + refit, or 1."""
+    if isinstance(model, GridSearchCV):
+        return len(ParameterGrid(model.param_grid)) * model.cv.get_n_splits() + 1
+    return 1
+
+
 def evaluate(X, y, n_splits, n_repeats, seed):
     folds = list(
         RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed).split(
@@ -145,7 +152,12 @@ def evaluate(X, y, n_splits, n_repeats, seed):
             r2.append(
                 float(1 - np.sum(resid**2) / np.sum((y[test] - y[test].mean()) ** 2))
             )
-        results[name] = {"rmse": rmse, "r2": r2, "seconds": seconds}
+        results[name] = {
+            "rmse": rmse,
+            "r2": r2,
+            "seconds": seconds,
+            "fits_per_fold": fits_per_fold(model),
+        }
         print(
             f"  {name:<52} RMSE {np.mean(rmse):.3f} +/- {np.std(rmse):.3f}"
             f"   R2 {np.mean(r2):.3f}   {np.mean(seconds):.2f} s/fold",
@@ -163,16 +175,19 @@ def markdown_table(all_results):
         )
         lines.append(
             "| Model | RMSE mean ± sd | RMSE median | Worst fold | R² (mean) "
-            "| Fit + predict, s/fold |"
+            "| Fits per fold | Seconds per fold (all fits) "
+            "| Seconds per fit (approx.) |"
         )
-        lines.append("|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|")
         ranked = sorted(info["models"].items(), key=lambda kv: np.mean(kv[1]["rmse"]))
         for name, res in ranked:
             rmse = np.asarray(res["rmse"])
             lines.append(
                 f"| {name} | {rmse.mean():.3f} ± {rmse.std():.3f} "
                 f"| {np.median(rmse):.3f} | {rmse.max():.3f} "
-                f"| {np.mean(res['r2']):.3f} | {np.mean(res['seconds']):.2f} |"
+                f"| {np.mean(res['r2']):.3f} | {res['fits_per_fold']} "
+                f"| {np.mean(res['seconds']):.2f} "
+                f"| {np.mean(res['seconds']) / res['fits_per_fold']:.2f} |"
             )
     return "\n".join(lines)
 

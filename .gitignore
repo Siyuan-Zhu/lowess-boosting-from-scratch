@@ -10,7 +10,8 @@ dist/
 .coverage
 coverage.xml
 htmlcov/
-benchmarks/results/
+benchmarks/results/*
+!benchmarks/results/rmse.png
 *.csv
 *.arff
 .DS_Store

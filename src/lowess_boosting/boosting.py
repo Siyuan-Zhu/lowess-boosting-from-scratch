@@ -12,7 +12,7 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted, validate_data
 
-from ._validation import check_fraction, check_int, count_of
+from ._validation import as_numeric_target, check_fraction, check_int, count_of
 from .lowess import LowessRegressor
 
 _MAX_SEED = np.iinfo(np.int32).max
@@ -27,9 +27,8 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
     ``residual_estimator`` is then fitted once to what is left.
 
     With ``n_estimators=1``, ``learning_rate=1.0`` and a random forest as
-    ``residual_estimator`` this is the two-stage model from the course project
-    the package started from: LOWESS first, then a tree ensemble on its
-    residuals.
+    ``residual_estimator`` the model is two-stage: LOWESS first, then a tree
+    ensemble on its residuals.
 
     Parameters
     ----------
@@ -123,7 +122,8 @@ class LowessBoostingRegressor(RegressorMixin, BaseEstimator):
             Fitted estimator.
         """
         self._check_params()
-        X_fit, y_fit = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        X_fit, y_raw = validate_data(self, X, y, dtype=np.float64, y_numeric=True)
+        y_fit = as_numeric_target(y_raw)
         rng = check_random_state(self.random_state)
         n_samples = X_fit.shape[0]
         n_rows = count_of(self.subsample, n_samples)

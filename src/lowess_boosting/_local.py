@@ -37,7 +37,7 @@ KERNELS = {
 
 
 # Upper bound on the number of entries in one (queries x training points) block.
-_BLOCK_ENTRIES = 2**22
+_BLOCK_ENTRIES = 2**21
 
 
 def local_linear_predict(
@@ -66,7 +66,8 @@ def local_linear_predict(
     kernel : str
         Key of :data:`KERNELS`.
     ridge : float
-        L2 penalty on the local slopes (never on the local intercept).
+        Penalty on the local slopes in locally standardised units (never on
+        the local intercept).
     n_neighbors : int, optional
         Each query's bandwidth is the distance to its ``n_neighbors``-th
         nearest training point.
@@ -80,11 +81,19 @@ def local_linear_predict(
         whose window holds no positively weighted training point get the mean
         target of the nearest training points with positive ``sample_weight``.
     """
-    # Centre on the training mean so the uncentred moment sums stay well
-    # conditioned. Slopes, and therefore the slope penalty, are unaffected.
+    # Centre on the training mean and divide by the largest absolute
+    # coordinate. Every result below is invariant to this change of units, and
+    # it keeps the squared terms finite for inputs as large as ~1e154 and the
+    # uncentred moment sums well conditioned.
     offset = X_train.mean(axis=0)
     X_train = X_train - offset
     X_query = X_query - offset
+    unit = float(np.max(np.abs(X_train)))
+    if unit > 0:
+        X_train = X_train / unit
+        X_query = X_query / unit
+        if bandwidth is not None:
+            bandwidth = bandwidth / unit
 
     n_samples, n_features = X_train.shape
     Z = np.hstack([np.ones((n_samples, 1)), X_train])
@@ -93,7 +102,6 @@ def local_linear_predict(
     # normal equations of every query in a block come from two matrix products.
     ZZ = (Z[:, :, None] * Z[:, None, :]).reshape(n_samples, q * q)
     Zy = Z * y_train[:, None]
-    penalty = ridge * np.diag(np.r_[0.0, np.ones(n_features)])
 
     out = np.empty(X_query.shape[0])
     block = max(1, _BLOCK_ENTRIES // max(n_samples, q * q))
@@ -103,10 +111,14 @@ def local_linear_predict(
         W = _kernel_weights(dist, kernel, n_neighbors, bandwidth) * sample_weight
 
         empty = W.sum(axis=1) <= 0.0
-        A = (W @ ZZ).reshape(-1, q, q) + penalty
+        # Some BLAS builds (Accelerate) raise spurious floating-point flags in
+        # matmul on finite inputs.
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            A = (W @ ZZ).reshape(-1, q, q)
+            b = W @ Zy
         A[empty] = np.eye(q)
-        b = W @ Zy
-        pred = _solve_intercepts(A, b, Xq)
+        b[empty] = 0.0
+        pred = _solve_intercepts(A, b, Xq, ridge)
         if empty.any():
             pred[empty] = _nearest_trusted_mean(dist[empty], y_train, sample_weight)
         out[start : start + block] = pred
@@ -119,8 +131,8 @@ def _kernel_weights(
     if bandwidth is not None:
         u = dist / bandwidth
         # The compact kernels vanish at u = 1. With a fixed width the gaussian
-        # is cut off at u = 4, as in the course notebook; in nearest-neighbour
-        # mode every kernel is cut off at the neighbourhood edge (u = 1).
+        # is cut off at u = 4; in nearest-neighbour mode every kernel is cut
+        # off at the neighbourhood edge (u = 1).
         cutoff = 4.0 if kernel == "gaussian" else 1.0
     else:
         assert n_neighbors is not None
@@ -136,25 +148,40 @@ def _kernel_weights(
     return np.where(u <= cutoff, KERNELS[kernel](np.minimum(u, cutoff)), 0.0)
 
 
-def _solve_intercepts(A: np.ndarray, b: np.ndarray, Xq: np.ndarray) -> np.ndarray:
-    """Fitted value at each query from its normal equations ``A beta = b``."""
-    try:
-        beta = np.linalg.solve(A, b[:, :, None])[:, :, 0]
-        return beta[:, 0] + np.einsum("ij,ij->i", beta[:, 1:], Xq)
-    except np.linalg.LinAlgError:
-        # Only reachable with ridge=0 and a degenerate neighbourhood (fewer
-        # distinct points than n_features + 1). Profile out the intercept and
-        # take the minimum-norm slopes, which is the ridge -> 0 limit of the
-        # penalised fit: unidentified slope directions are set to zero.
-        s0 = A[:, 0, 0]
-        mean_x = A[:, 0, 1:] / s0[:, None]
-        mean_y = b[:, 0] / s0
-        scatter = A[:, 1:, 1:] - s0[:, None, None] * (
-            mean_x[:, :, None] * mean_x[:, None, :]
-        )
-        cross = b[:, 1:] - s0[:, None] * mean_x * mean_y[:, None]
-        slopes = (np.linalg.pinv(scatter, hermitian=True) @ cross[:, :, None])[:, :, 0]
-        return mean_y + np.einsum("ij,ij->i", slopes, Xq - mean_x)
+def _solve_intercepts(
+    A: np.ndarray, b: np.ndarray, Xq: np.ndarray, ridge: float
+) -> np.ndarray:
+    """Fitted value at each query from its weighted normal equations.
+
+    ``A`` and ``b`` are the uncentred moments ``sum w z z^T`` and
+    ``sum w z y`` with ``z = [1, x]``. The intercept is profiled out, the
+    slopes are solved in locally standardised coordinates with the penalty
+    ``ridge * I``, and directions the neighbourhood does not span (eigenvalues
+    at round-off level) get zero slope. That is the same as penalising each
+    raw slope by ``ridge`` times its feature's weighted scatter, so the result
+    does not depend on the units of any feature.
+    """
+    s0 = A[:, 0, 0]
+    mean_x = A[:, 0, 1:] / s0[:, None]
+    mean_y = b[:, 0] / s0
+    second = A[:, 1:, 1:]
+    scatter = second - s0[:, None, None] * (mean_x[:, :, None] * mean_x[:, None, :])
+    cross = b[:, 1:] - s0[:, None] * mean_x * mean_y[:, None]
+
+    # A feature whose local scatter is at round-off level relative to its
+    # uncentred second moment does not vary in this window.
+    var = np.einsum("ijj->ij", scatter)
+    varies = var > 1e-12 * np.einsum("ijj->ij", second)
+    scale = np.where(varies, np.sqrt(np.where(varies, var, 1.0)), np.inf)
+    corr = scatter / (scale[:, :, None] * scale[:, None, :])
+    corr += ridge * np.eye(corr.shape[1])
+
+    vals, vecs = np.linalg.eigh(corr)
+    keep = vals > 1e-10 * np.maximum(vals[:, -1:], 1.0)
+    inv = np.where(keep, 1.0 / np.where(keep, vals, 1.0), 0.0)
+    rhs = np.einsum("ikj,ik->ij", vecs, cross / scale)
+    slopes = np.einsum("ijk,ik->ij", vecs, inv * rhs) / scale
+    return mean_y + np.einsum("ij,ij->i", slopes, Xq - mean_x)
 
 
 def _nearest_trusted_mean(
@@ -164,7 +191,8 @@ def _nearest_trusted_mean(
     # If no point had positive weight every distance is inf, so every point
     # ties as nearest and the result is the overall mean.
     dist = np.where(sample_weight > 0, dist, np.inf)
-    nearest = dist == dist.min(axis=1, keepdims=True)
+    # Distances within round-off of the minimum count as ties.
+    nearest = dist <= dist.min(axis=1, keepdims=True) * (1 + 1e-9)
     return (nearest @ y_train) / nearest.sum(axis=1)
 
 
