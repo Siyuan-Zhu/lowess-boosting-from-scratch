@@ -11,7 +11,10 @@ dist/
 coverage.xml
 htmlcov/
 benchmarks/results/*
-!benchmarks/results/rmse.png
+!benchmarks/results/fig1_rmse.png
+!benchmarks/results/fig1_rmse.svg
+!benchmarks/results/fig2_rank.png
+!benchmarks/results/fig2_rank.svg
 *.csv
 *.arff
 .DS_Store

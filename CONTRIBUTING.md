@@ -24,5 +24,6 @@ pytest --cov
 - Expected values in numerical tests should come from a hand calculation or a
   known identity, not from re-running the code under test.
 - Keep runtime dependencies to numpy, scipy and scikit-learn.
-- If you change the benchmark script, rerun it and update the README table
-  with the settings printed at the end of the run.
+- If you change the benchmark script, rerun it, run
+  `benchmarks/report.py` and update the README tables and figures with the
+  settings printed at the end of the run.
