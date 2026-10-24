@@ -1,31 +1,56 @@
 # lowess-boosting
 
 LOWESS (locally weighted linear regression) for any number of features, and
-least-squares gradient boosting that uses LOWESS as its base learner. Both are
-scikit-learn estimators: they pass `sklearn.utils.estimator_checks`, and they
-work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
-
-The only runtime dependencies are numpy, scipy and scikit-learn.
-
-Figure 1 rates three LOWESS variants and five baselines on seven public
-regression datasets with an Elo leaderboard. LOWESS has the lowest mean error
-only on Auto MPG, which has 3 features, and a tree ensemble is best on the other
-six. The method and tables are under [Benchmarks](#benchmarks).
+least-squares gradient boosting with LOWESS as the base learner, both as scikit-learn estimators.
 
 ![Elo ratings with bootstrap confidence intervals for eight regression models](benchmarks/results/fig1_elo.png)
 
-**Figure 1.** *Elo ratings of eight regressors on seven datasets.* A Bradley-Terry
-model fitted by maximum likelihood to 21 dataset-by-repeat comparisons (7
-datasets, 3 repeats of 5-fold cross-validation, seed 0) gives each model an Elo
-rating; a model wins a comparison when its mean test root mean squared error
-(RMSE) is lower. Linear regression is anchored at 1000, and 400 points mean 10:1
-odds of winning a comparison. Points are ratings and bars are 95% percentile
-bootstrap intervals over datasets (1,000 resamples). Filled circles are the LOWESS
-(locally weighted scatterplot smoothing) family and open circles are baselines
-(RF is random forest, KNN is k-nearest neighbors). Seven datasets give wide
-intervals that mostly overlap, so the order within the top four is not
-established. The tree ensembles rate highest, and LOWESS and LOWESS boosting rate
-about 250 points below HistGradientBoosting.
+**Figure 1.** *Elo ratings of eight regressors on seven public regression datasets.* Ratings come
+from pairwise comparisons of test RMSE (root mean squared error) over 5-fold
+cross-validation repeated 3 times, with linear regression fixed at 1000, and bars are 95% bootstrap intervals over datasets
+([method](#evaluation-method)). Filled circles are the LOWESS (locally weighted scatterplot smoothing) family and open circles
+are baselines (RF is random forest, KNN is k-nearest neighbors).
+
+## Results in brief
+
+- The course-project hybrid (LOWESS plus a random forest on its residuals) ranks
+  4th of 8 by average rank (3.57) and has an Elo rating of 1593, against 1685 for
+  HistGradientBoosting, the top model.
+- Plain LOWESS has the lowest mean error only on Auto MPG (4.08 mpg), where all
+  eight models are within 0.24 mpg and no difference is significant. On yacht,
+  energy, concrete, airfoil and power plant it is significantly worse than the best
+  model (Holm-adjusted p < 0.001); on California the outlier folds leave the
+  test inconclusive. Its Elo rating is 1438.
+- Boosted LOWESS fits in a median 0.8 s per fold, against 0.04 s for
+  HistGradientBoosting, and costs about 12 to 16 times plain LOWESS on the four
+  largest datasets. A full-data California run did not finish in 45 minutes, so
+  California and power plant are 5,000-row samples.
+- Seven datasets limit the statistics. No Wilcoxon comparison with the top model
+  survives Holm adjustment (smallest adjusted p 0.109), and the Elo intervals
+  overlap widely.
+
+## What this project shows
+
+- The method is implemented from the maths: weighted normal equations with
+  Cleveland's robustifying iterations. In one dimension it matches statsmodels'
+  `lowess` to within 1e-10
+  ([tests/test_statsmodels_agreement.py](tests/test_statsmodels_agreement.py)).
+- Both estimators pass the full `parametrize_with_checks` suite on five
+  configurations with no expected failures
+  ([tests/test_sklearn_compat.py](tests/test_sklearn_compat.py)).
+- 368 tests pass at 100% branch coverage. CI runs ruff, mypy and pytest on Ubuntu
+  with Python 3.10 to 3.14, plus Windows and macOS
+  ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+- The benchmark uses repeated K-fold with Nadeau-Bengio corrected intervals,
+  Holm-adjusted Wilcoxon tests and Bradley-Terry Elo ratings as in TabArena. The
+  statistics are unit-tested against hand calculations
+  ([benchmarks/bench_stats.py](benchmarks/bench_stats.py),
+  [tests/test_benchmark_stats.py](tests/test_benchmark_stats.py)).
+- [HISTORY.md](HISTORY.md) lists eight problems in the original DATA 441
+  notebooks and how each was fixed, such as a kernel that went negative and a
+  ridge term that penalised the intercept.
+- Results are reported as measured, including that LOWESS loses to tree
+  ensembles on six of the seven datasets.
 
 ## Install
 
@@ -34,7 +59,8 @@ pip install git+https://github.com/Siyuan-Zhu/lowess-boosting-from-scratch
 ```
 
 Python 3.10 or newer. To run the tests or benchmarks from a clone:
-`pip install -e ".[dev,bench]"`.
+`pip install -e ".[dev,bench]"`. Agents and contributors: see
+[AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
@@ -48,25 +74,13 @@ from lowess_boosting import LowessBoostingRegressor, LowessRegressor
 rng = np.random.default_rng(0)
 X = rng.uniform(-3, 3, size=(500, 2))
 y = np.sin(X[:, 0]) * X[:, 1] + rng.normal(scale=0.2, size=500)
-
-for model in [
-    LowessRegressor(frac=0.3),
-    LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5),
-]:
-    pipe = make_pipeline(StandardScaler(), model)
-    print(type(model).__name__, cross_val_score(pipe, X, y, cv=5).mean().round(3))
+model = make_pipeline(StandardScaler(), LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5))
+print(cross_val_score(model, X, y, cv=5).mean().round(3))  # 0.93 (numpy 2.5.4, scikit-learn 1.9.1)
 ```
 
-Output (numpy 2.5.4, scikit-learn 1.9.1):
-
-```
-LowessRegressor 0.869
-LowessBoostingRegressor 0.93
-```
-
-At `frac=0.3` a single LOWESS fit oversmooths this surface, and five boosting
+At `frac=0.3` a single LOWESS fit scores 0.869 on this data, and five boosting
 stages recover most of the lost detail. A single LOWESS with `frac=0.1` scores
-0.954 on the same data, so tune the span before adding stages.
+0.954, so tune the span before adding stages.
 
 ## API
 
@@ -233,6 +247,9 @@ three predictors from the course project.
   ratings finite when a model never wins. Elo is 400/ln(10) times the
   Bradley-Terry log-strength, shifted so that linear regression is 1000.
 
+<details>
+<summary>Tables, Figure 2 and notes on reading them</summary>
+
 ### Results by dataset
 
 **Table 1.** Mean RMSE ± half-width of the 95% corrected CI (in each
@@ -351,35 +368,19 @@ p-value in brackets. The best model on each dataset is marked "best".
 
 ### Reading the results
 
-- Auto MPG (3 features, 398 rows) is the one dataset where LOWESS has the lowest
-  mean RMSE (4.08). The eight models sit within 0.24 mpg of each other, and no
-  difference to LOWESS is significant after Holm adjustment (the smallest
-  adjusted p is 0.51).
-- On the other six datasets a tree ensemble is best. LOWESS is significantly
-  worse than the best model (Holm p < 0.001) on yacht, energy, concrete, airfoil
-  and power plant. On California the CI for its difference to
-  HistGradientBoosting is [-0.56, +1.62] because of the outlier folds, so the
-  test cannot call it. The medians (0.645 against 0.499) point the same way as
-  the other datasets.
 - Five boosting stages help on energy (1.07 to 0.92), concrete (6.67 to 6.36) and
-  airfoil (2.58 to 2.32). They do nothing or hurt on yacht, Auto MPG, power plant
-  and California. Boosted LOWESS costs about 12 to 16 times the fit time of plain
-  LOWESS on the four largest datasets.
-- The "LOWESS + RF residuals" setup from the course project ranks 4th of 8
-  (average rank 3.57), ahead of both tuned LOWESS models. On concrete it reaches
-  5.01 against 4.88 for a random forest alone, so the forest does most of the
-  work.
+  airfoil (2.58 to 2.32), and do nothing or hurt on yacht, Auto MPG, power plant
+  and California.
+- On concrete the hybrid reaches 5.01 against 4.88 for a random forest alone, so
+  the forest does most of the work.
 - The Friedman test rejects "all models are equal" (chi-square 26.14,
-  p < 0.001). The pairwise tests are weaker: no Wilcoxon comparison with
-  HistGradientBoosting survives Holm adjustment (the smallest adjusted p is
-  0.109, close to the floor that 7 datasets allow), and the Elo intervals
-  overlap widely. The LOWESS family (Elo 1438 and 1433) rates about 250 points
-  below the top three, but this much data cannot separate them.
-- Seven datasets is a small sample for rank and Elo comparisons, and four of them have fewer
-  than 1,100 rows, which is also why the yacht intervals are wide. The
-  correction makes CIs about 2.2 times wider than a naive standard error (the
-  `(1/15 + 1/4)` against `1/15` variance term). It still treats the 15 fold
-  scores as exchangeable, which holds only approximately.
+  p < 0.001). The pairwise tests are weaker, as Table 4 shows.
+- Four of the seven datasets have fewer than 1,100 rows, which is also why the
+  yacht intervals are wide. The corrected intervals are about 2.2 times wider than
+  naive ones (the `(1/15 + 1/4)` against `1/15` variance term) and still treat the
+  15 fold scores as exchangeable, which holds only approximately.
+
+</details>
 
 ## Limitations
 
@@ -400,12 +401,7 @@ p-value in brackets. The best model on each dataset is marked "best".
 - Local linear fits extrapolate linearly. A query far outside the training
   data gets its neighbourhood's slope extended out to it, which is how one
   extreme California row produced a prediction about 90 times too large (see
-  Benchmarks). Clip or transform heavy-tailed features first.
-- On six of the seven benchmark datasets a scikit-learn tree ensemble has the
-  lowest mean RMSE, and the tree models fit faster than boosted LOWESS on the
-  larger ones. LOWESS had the lowest mean only on Auto MPG, the second
-  smallest dataset and the only one with 3 features, and there the models are
-  statistically tied.
+  [Benchmarks](#benchmarks)). Clip or transform heavy-tailed features first.
 - `LowessBoostingRegressor` supports squared error only and has no early
   stopping. Use `staged_predict` on a validation set to pick `n_estimators`.
 
@@ -417,8 +413,9 @@ ruff check . && ruff format --check . && mypy
 pytest --cov
 ```
 
-CI runs ruff, mypy and pytest on Python 3.10 to 3.13, then builds the wheel
-and imports it from a clean virtual environment.
+CI runs ruff, mypy and pytest on Ubuntu with Python 3.10 to 3.14, and on Windows
+and macOS with 3.13, then builds the wheel and imports it from a clean virtual
+environment.
 
 ## Acknowledgements
 

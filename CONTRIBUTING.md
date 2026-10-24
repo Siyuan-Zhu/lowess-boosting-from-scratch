@@ -1,6 +1,6 @@
 # Contributing
 
-Bug reports and pull requests are welcome.
+Bug reports and pull requests are welcome. AI coding agents: see [AGENTS.md](AGENTS.md).
 
 ## Development setup
 
