@@ -89,7 +89,105 @@ def friedman_test(scores):
     }
 
 
-def nemenyi_critical_difference(n_models, n_datasets, alpha=0.05):
-    """Nemenyi critical difference for average ranks (Demsar 2006)."""
-    q = stats.studentized_range.ppf(1 - alpha, n_models, np.inf) / np.sqrt(2)
-    return float(q * np.sqrt(n_models * (n_models + 1) / (6.0 * n_datasets)))
+def pairwise_wins(scores):
+    """Win matrix from a (tasks x models) score array, lower score = win.
+
+    ``wins[i, j]`` counts the tasks where model i beats model j; a tie counts
+    half a win for each side. The diagonal is zero.
+    """
+    scores = np.asarray(scores, dtype=float)
+    less = (scores[:, :, None] < scores[:, None, :]).sum(axis=0)
+    equal = (scores[:, :, None] == scores[:, None, :]).sum(axis=0)
+    wins = less + 0.5 * equal
+    np.fill_diagonal(wins, 0.0)
+    return wins
+
+
+def fit_bradley_terry(wins, prior=0.5, n_iter=2000, tol=1e-12):
+    """Bradley-Terry log-strengths by maximum likelihood (MM algorithm).
+
+    ``P(i beats j) = 1 / (1 + exp(theta_j - theta_i))``. ``prior`` adds that
+    many wins to each side of every pair, which keeps the estimates finite
+    when a model wins or loses every comparison; use 0 for the plain MLE.
+    The result is centred to mean zero.
+    """
+    wins = np.asarray(wins, dtype=float) + prior
+    np.fill_diagonal(wins, 0.0)
+    games = wins + wins.T
+    total = wins.sum(axis=1)
+    strength = np.ones(len(wins))
+    for _ in range(n_iter):
+        denom = (games / (strength[:, None] + strength[None, :])).sum(axis=1)
+        new = total / denom
+        new /= np.exp(np.log(new).mean())
+        if np.max(np.abs(np.log(new) - np.log(strength))) < tol:
+            strength = new
+            break
+        strength = new
+    return np.log(strength)
+
+
+def elo_ratings(wins, anchor, anchor_rating=1000.0, prior=0.5):
+    """Bradley-Terry fit on the Elo scale (400 points = 10:1 odds), with the
+    model at index ``anchor`` fixed at ``anchor_rating``."""
+    theta = fit_bradley_terry(wins, prior=prior)
+    return anchor_rating + 400.0 / np.log(10.0) * (theta - theta[anchor])
+
+
+def bootstrap_elo(dataset_wins, anchor, n_boot=1000, seed=0, level=0.95, prior=0.5):
+    """Elo ratings with a percentile CI from resampling whole datasets.
+
+    ``dataset_wins`` has shape (datasets, models, models), one win matrix per
+    dataset. Returns (point, low, high) arrays over the models.
+    """
+    dataset_wins = np.asarray(dataset_wins, dtype=float)
+    n = len(dataset_wins)
+    point = elo_ratings(dataset_wins.sum(axis=0), anchor, prior=prior)
+    rng = np.random.default_rng(seed)
+    draws = np.empty((n_boot, dataset_wins.shape[1]))
+    for b in range(n_boot):
+        pick = rng.integers(0, n, size=n)
+        draws[b] = elo_ratings(dataset_wins[pick].sum(axis=0), anchor, prior=prior)
+    alpha = (1.0 - level) / 2.0
+    low, high = np.quantile(draws, [alpha, 1.0 - alpha], axis=0)
+    return point, low, high
+
+
+def pareto_front(cost, score):
+    """Indices of models not beaten on both lower cost and higher score,
+    ordered by increasing cost."""
+    cost, score = np.asarray(cost, float), np.asarray(score, float)
+    front, best = [], -np.inf
+    for i in np.argsort(cost, kind="stable"):
+        if score[i] > best:
+            front.append(int(i))
+            best = score[i]
+    return front
+
+
+def wilcoxon_vs_reference(values, reference):
+    """Paired two-sided Wilcoxon signed-rank test of each column against column
+    ``reference``, on log ratios so the datasets' scales do not matter.
+
+    ``values`` has one row per dataset and one column per model (lower is
+    better). Returns one dict per other model with the number of datasets it
+    beats the reference on, the statistic, the raw p-value and the Holm p.
+    """
+    values = np.asarray(values, dtype=float)
+    others = [j for j in range(values.shape[1]) if j != reference]
+    rows = []
+    for j in others:
+        ratio = np.log(values[:, j] / values[:, reference])
+        res = stats.wilcoxon(ratio)
+        rows.append(
+            {
+                "model": j,
+                "beats": int((ratio < 0).sum()),
+                "statistic": float(res.statistic),
+                "p": float(res.pvalue),
+            }
+        )
+    holm = holm_adjust([r["p"] for r in rows])
+    for r, h in zip(rows, holm, strict=True):
+        r["p_holm"] = float(h)
+    return rows

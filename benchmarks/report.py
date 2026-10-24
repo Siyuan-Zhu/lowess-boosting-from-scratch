@@ -7,9 +7,10 @@ Writes ``results/results.md`` plus ``fig1_rmse`` and ``fig2_rank`` as PNG
 
 Per dataset, each model's mean RMSE gets a 95% Nadeau-Bengio corrected
 interval, and each model is compared with the best model on paired fold
-scores (same splits for every model). Across datasets the models are ranked
-by mean RMSE, tested with Friedman's test, and drawn as a Nemenyi
-critical-difference diagram when there are six or more datasets.
+scores (same splits for every model). Across datasets the models get a
+Bradley-Terry Elo rating (bootstrap CI over datasets), average ranks with
+Friedman's test, and Holm-adjusted Wilcoxon signed-rank tests against the
+top-rated model.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ import numpy as np
 import plot_style
 
 RESULTS_DIR = Path(__file__).parent / "results"
+ANCHOR = "Linear regression"  # fixed at 1000 Elo
+N_BOOT = 1000
 
 SHORT = {
     "LOWESS (tuned frac)": "LOWESS",
@@ -48,7 +51,7 @@ COLUMN = {
 # --------------------------------------------------------------------- statistics
 
 
-def summarize(results):
+def summarize(results, settings):
     """Per-dataset intervals and paired tests, plus the cross-dataset ranks."""
     names = list(next(iter(results.values()))["models"])
     datasets = sorted(results, key=lambda d: results[d]["n_samples"])
@@ -75,7 +78,22 @@ def summarize(results):
         [[np.mean(results[d]["models"][m]["rmse"]) for m in names] for d in datasets]
     )
     ranks, avg = bs.average_ranks(means)
+    # one score per dataset x repeat: the mean RMSE over that repeat's folds
+    per_repeat = []
+    for d in datasets:
+        rmse = np.array([results[d]["models"][m]["rmse"] for m in names])
+        per_repeat.append(rmse.reshape(len(names), -1, settings["n_splits"]).mean(2).T)
+    dataset_wins = np.stack([bs.pairwise_wins(x) for x in per_repeat])
+    anchor = names.index(ANCHOR)
+    elo, elo_low, elo_high = bs.bootstrap_elo(dataset_wins, anchor, N_BOOT, seed=0)
+    elo_order = [names[i] for i in np.argsort(-elo, kind="stable")]
+    top = names.index(elo_order[0])
     return {
+        "elo": dict(zip(names, elo, strict=True)),
+        "elo_ci": {m: (elo_low[i], elo_high[i]) for i, m in enumerate(names)},
+        "elo_order": elo_order,
+        "n_tasks": int(sum(len(x) for x in per_repeat)),
+        "wilcoxon": bs.wilcoxon_vs_reference(np.exp(np.log(means)), reference=top),
         "names": names,
         "datasets": datasets,
         "table": table,
@@ -83,7 +101,6 @@ def summarize(results):
         "avg_rank": dict(zip(names, avg, strict=True)),
         "order": [names[i] for i in np.argsort(avg, kind="stable")],
         "friedman": bs.friedman_test(means),
-        "cd": bs.nemenyi_critical_difference(len(names), len(datasets)),
     }
 
 
@@ -127,7 +144,7 @@ def markdown(results, settings, s):
         f"Friedman chi-square = {f['chi2']:.2f} (df {f['n_models'] - 1}, "
         f"{p_text(f['p_chi2'])}); Iman-Davenport F = {f['f']:.2f} "
         f"({p_text(f['p_f'])}); {f['n_datasets']} datasets, {f['n_models']} "
-        f"models. Nemenyi critical difference at 0.05: {s['cd']:.2f} ranks.\n"
+        "models.\n"
     )
     out += ["| Model | " + cols + " | Average rank |"]
     out += ["|---" * (len(s["datasets"]) + 2) + "|"]
@@ -136,6 +153,27 @@ def markdown(results, settings, s):
         cells = [f"{s['ranks'][j, i]:g}" for j in range(len(s["datasets"]))]
         out.append(
             f"| {SHORT[m]} | " + " | ".join(cells) + f" | {s['avg_rank'][m]:.2f} |"
+        )
+    out.append("\n### Elo rating (Bradley-Terry)\n")
+    out.append(
+        f"{s['n_tasks']} dataset-by-repeat comparisons of {len(names)} models; "
+        f"{ANCHOR} anchored at 1000; 95% percentile CI from {N_BOOT} bootstrap "
+        "resamples of the datasets.\n"
+    )
+    out += ["| Model | Elo | 95% CI |", "|---|---|---|"]
+    for m in s["elo_order"]:
+        lo, hi = s["elo_ci"][m]
+        out.append(f"| {SHORT[m]} | {s['elo'][m]:.0f} | [{lo:.0f}, {hi:.0f}] |")
+    top = s["elo_order"][0]
+    out.append(f"\n### Wilcoxon signed-rank tests against {SHORT[top]}\n")
+    out += [
+        "| Model | Datasets where it beats the top model | W | p | p (Holm) |",
+        "|---|---|---|---|---|",
+    ]
+    for r in sorted(s["wilcoxon"], key=lambda r: -s["elo"][names[r["model"]]]):
+        out.append(
+            f"| {SHORT[names[r['model']]]} | {r['beats']} of {len(s['datasets'])} "
+            f"| {r['statistic']:g} | {fmt_p(r['p'])} | {fmt_p(r['p_holm'])} |"
         )
     out.append("\n### Paired comparison with the best model (difference in RMSE)\n")
     out.append(
@@ -317,81 +355,51 @@ def figure_rmse(results, s):
     plt.close(fig)
 
 
-def cd_cliques(avg_sorted, cd):
-    """Maximal runs of models whose average ranks differ by less than ``cd``."""
-    runs = []
-    for i in range(len(avg_sorted)):
-        j = i
-        while j + 1 < len(avg_sorted) and avg_sorted[j + 1] - avg_sorted[i] < cd:
-            j += 1
-        if j > i and not any(a <= i and j <= b for a, b in runs):
-            runs.append((i, j))
-    return runs
-
-
-def figure_rank(results, s):
-    """Figure 1: Nemenyi critical-difference diagram, one panel."""
+def figure_elo(results, s):
+    """Figure 1: Elo leaderboard with bootstrap CIs, one column wide."""
     import matplotlib.pyplot as plt
 
     plot_style.apply()
-    order, k = s["order"], len(s["order"])
-    avg = [s["avg_rank"][m] for m in order]
-    fig = plt.figure(figsize=(plot_style.WIDTH, 2.2))
-    ax = fig.add_axes((0, 0, 1, 1))
-    ax.axis("off")
-    ax.set_xlim(-3.7, k + 3.4)
-    ax.set_ylim(-3.55, 2.0)
-    ax.plot([1, k], [0, 0], color="black", lw=0.6)
-    for r in range(1, k + 1):
-        ax.plot([r, r], [0, 0.15], color="black", lw=0.6)
-        ax.text(r, 0.3, str(r), ha="center", va="bottom", fontsize=8)
-    half = (k + 1) // 2
-    for i, (m, a) in enumerate(zip(order, avg, strict=True)):
-        left = i < half
-        depth = -(0.95 + 0.7 * (i if left else k - 1 - i))
-        xt = 0.55 if left else k + 0.45
-        ax.plot([a, a, xt], [0, depth, depth], color="black", lw=0.6)
+    order = s["elo_order"]
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+    for row, m in enumerate(order):
+        lo, hi = s["elo_ci"][m]
+        elo = s["elo"][m]
+        ax.plot([lo, hi], [row, row], color="black", lw=0.8, solid_capstyle="butt")
         ax.plot(
-            [a],
-            [0],
+            [elo],
+            [row],
             marker="o",
-            markersize=3.5,
+            markersize=4.5,
             markerfacecolor="black" if is_lowess(m) else "white",
             markeredgecolor="black",
             markeredgewidth=0.7,
-            zorder=3,
+            linestyle="none",
         )
-        ax.text(
-            xt + (-0.12 if left else 0.12),
-            depth,
-            f"{SHORT[m]} ({a:.2f})",
-            ha="right" if left else "left",
+        ax.annotate(
+            f"{elo:.0f}",
+            (1.0, row),
+            xycoords=("axes fraction", "data"),
+            xytext=(4, 0),
+            textcoords="offset points",
             va="center",
             fontsize=8,
         )
-    for n, (i, j) in enumerate(cd_cliques(avg, s["cd"])):
-        y = -0.4 - 0.2 * n
-        ax.plot(
-            [avg[i] - 0.05, avg[j] + 0.05],
-            [y, y],
-            color="black",
-            lw=1.6,
-            solid_capstyle="butt",
-        )
-    ax.plot([1, 1 + s["cd"]], [1.4, 1.4], color="black", lw=0.7)
-    for x in (1, 1 + s["cd"]):
-        ax.plot([x, x], [1.28, 1.52], color="black", lw=0.7)
-    ax.text(1 + s["cd"] / 2, 1.63, f"CD = {s['cd']:.2f}", ha="center", fontsize=8)
-    save(fig, "fig1_rank")
+    ax.axvline(1000, color="black", lw=0.4, ls=":")
+    ax.set_yticks(range(len(order)), [SHORT[m] for m in order])
+    ax.set_ylim(len(order) - 0.5, -0.6)
+    ax.set_xlabel("Elo rating (linear regression = 1000)")
+    fig.subplots_adjust(left=0.38, right=0.88, top=0.97, bottom=0.17)
+    save(fig, "fig1_elo")
     plt.close(fig)
 
 
 def figure_time(results, s):
-    """Figure 2: average rank against median fit time, one column wide."""
+    """Figure 2: Elo against median fit time with the Pareto front."""
     import matplotlib.pyplot as plt
 
     plot_style.apply()
-    order, k = s["order"], len(s["order"])
+    order = s["order"]
     fig, ax = plt.subplots(figsize=(3.5, 3.0))
     times = {
         m: float(
@@ -404,31 +412,37 @@ def figure_time(results, s):
         )
         for m in order
     }
+    elo = s["elo"]
+    front = bs.pareto_front([times[m] for m in order], [elo[m] for m in order])
+    fx = [times[order[i]] for i in front] + [20.0]
+    fy = [elo[order[i]] for i in front]
+    ax.step(fx, [*fy, fy[-1]], where="post", color="black", lw=0.6)
     place = {  # horizontal alignment and offset in points, by model
-        "HistGradientBoosting": ("right", -5, 5),
+        "HistGradientBoosting": ("right", -5, 6),
         "Random forest": ("left", 5, 0),
-        "Gradient boosting": ("right", -5, -5),
+        "Gradient boosting": ("right", -5, -4),
         "LOWESS + RF residuals": ("left", 5, 0),
         "LOWESS": ("left", 5, 0),
-        "LOWESS boosting": ("right", 0, -9),
-        "KNN": ("left", 5, 0),
-        "Linear regression": ("left", 5, 0),
+        "LOWESS boosting": ("center", 0, -9),
+        "KNN": ("right", -5, 7),
+        "Linear regression": ("left", 3, 8),
     }
     for m in order:
         ax.plot(
             [times[m]],
-            [s["avg_rank"][m]],
+            [elo[m]],
             marker="o",
             markersize=4.5,
             markerfacecolor="black" if is_lowess(m) else "white",
             markeredgecolor="black",
             markeredgewidth=0.7,
             linestyle="none",
+            zorder=3,
         )
         side, dx, dy = place[SHORT[m]]
         ax.annotate(
             SHORT[m],
-            (times[m], s["avg_rank"][m]),
+            (times[m], elo[m]),
             xytext=(dx, dy),
             textcoords="offset points",
             ha=side,
@@ -437,10 +451,10 @@ def figure_time(results, s):
         )
     ax.set_xscale("log")
     ax.set_xlim(3e-4, 20)
-    ax.set_ylim(k + 0.4, 0.6)
-    ax.set_ylabel("Average rank (1 = best)")
+    ax.set_ylim(940, 1760)
+    ax.set_ylabel("Elo rating (linear regression = 1000)")
     ax.set_xlabel("Median fit time per fold (s)")
-    fig.subplots_adjust(left=0.14, right=0.97, top=0.97, bottom=0.15)
+    fig.subplots_adjust(left=0.17, right=0.97, top=0.97, bottom=0.15)
     save(fig, "fig2_time")
     plt.close(fig)
 
@@ -448,12 +462,12 @@ def figure_time(results, s):
 def main():
     saved = json.loads((RESULTS_DIR / "results.json").read_text())
     results, settings = saved["results"], saved["settings"]
-    s = summarize(results)
+    s = summarize(results, settings)
     md = markdown(results, settings, s)
     (RESULTS_DIR / "results.md").write_text(md)
     print(md)
     figure_rmse(results, s)
-    figure_rank(results, s)
+    figure_elo(results, s)
     figure_time(results, s)
     print("Saved figures to", RESULTS_DIR)
 

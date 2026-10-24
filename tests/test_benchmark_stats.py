@@ -91,13 +91,74 @@ def test_friedman_perfect_agreement():
     assert res["p_f"] == 0.0
 
 
-@pytest.mark.parametrize(
-    ("k", "n", "expected"),
-    [
-        # Demsar (2006), Table 5: q_0.05 = 2.343 (k=3), 3.031 (k=8)
-        (3, 10, 2.343 * np.sqrt(3 * 4 / (6 * 10))),
-        (8, 7, 3.031 * np.sqrt(8 * 9 / (6 * 7))),
-    ],
-)
-def test_nemenyi_critical_difference_matches_published_table(k, n, expected):
-    assert bs.nemenyi_critical_difference(k, n) == pytest.approx(expected, rel=2e-3)
+def test_pairwise_wins_counts_ties_as_half():
+    scores = np.array([[1.0, 2.0, 2.0], [3.0, 1.0, 2.0]])
+    wins = bs.pairwise_wins(scores)
+    # model 0 beats 1 and 2 on task 0 and loses to both on task 1
+    assert wins[0, 1] == 1 and wins[1, 0] == 1
+    # models 1 and 2 tie on task 0; model 1 beats 2 on task 1
+    assert wins[1, 2] == 1.5 and wins[2, 1] == 0.5
+    assert np.all(np.diag(wins) == 0)
+
+
+def test_bradley_terry_recovers_known_strengths():
+    theta = np.array([0.0, 0.7, -1.2, 2.0])
+    p = 1 / (1 + np.exp(theta[None, :] - theta[:, None]))  # P(i beats j)
+    wins = 1e4 * p
+    np.fill_diagonal(wins, 0.0)
+    fit = bs.fit_bradley_terry(wins, prior=0.0)
+    assert fit == pytest.approx(theta - theta.mean(), abs=1e-6)
+
+
+def test_elo_scale_and_anchor():
+    # 10 wins to 1 is 10:1 odds, which is 400 Elo points
+    wins = np.array([[0.0, 10.0], [1.0, 0.0]])
+    elo = bs.elo_ratings(wins, anchor=1, prior=0.0)
+    assert elo == pytest.approx([1400.0, 1000.0], abs=1e-6)
+
+
+def test_equal_records_give_equal_elo():
+    wins = np.array([[0.0, 5.0], [5.0, 0.0]])
+    assert bs.elo_ratings(wins, anchor=0) == pytest.approx([1000.0, 1000.0])
+
+
+def test_prior_keeps_a_winless_model_finite():
+    wins = np.array([[0.0, 8.0], [0.0, 0.0]])
+    assert np.all(np.isfinite(bs.elo_ratings(wins, anchor=1)))
+
+
+def test_bootstrap_is_reproducible_and_brackets_the_estimate():
+    rng = np.random.default_rng(1)
+    scores = rng.normal(size=(7, 3, 4)) + np.array([0.0, 0.5, 1.0, 1.5])
+    per_dataset = np.stack([bs.pairwise_wins(s) for s in scores])
+    first = bs.bootstrap_elo(per_dataset, anchor=3, n_boot=200, seed=4)
+    again = bs.bootstrap_elo(per_dataset, anchor=3, n_boot=200, seed=4)
+    for a, b in zip(first, again, strict=True):
+        assert np.array_equal(a, b)
+    point, low, high = first
+    assert np.all(low <= high)
+    assert np.all(low <= point + 1e-9) and np.all(point <= high + 1e-9)
+    assert point[3] == pytest.approx(1000.0) and low[3] == high[3] == 1000.0
+    assert point[0] > point[1] > point[2] > point[3]
+
+
+def test_bootstrap_of_identical_datasets_has_zero_width():
+    one = bs.pairwise_wins(np.array([[1.0, 2.0, 3.0], [1.5, 2.5, 2.0]]))
+    point, low, high = bs.bootstrap_elo(np.stack([one] * 5), anchor=2, n_boot=50)
+    assert low == pytest.approx(point) and high == pytest.approx(point)
+
+
+def test_pareto_front_keeps_non_dominated_models():
+    cost = [1.0, 2.0, 3.0, 4.0]
+    score = [10.0, 9.0, 12.0, 11.0]
+    assert bs.pareto_front(cost, score) == [0, 2]
+
+
+def test_wilcoxon_against_reference_uses_log_ratios():
+    ref = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    worse = ref * np.array([1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7])
+    rows = bs.wilcoxon_vs_reference(np.column_stack([ref, worse]), reference=0)
+    assert rows[0]["beats"] == 0
+    # all 7 differences have the same sign: exact two-sided p = 2 / 2**7
+    assert rows[0]["p"] == pytest.approx(2 / 128)
+    assert rows[0]["p_holm"] == pytest.approx(2 / 128)  # one comparison

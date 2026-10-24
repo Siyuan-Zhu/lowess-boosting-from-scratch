@@ -11,9 +11,9 @@ dist/
 coverage.xml
 htmlcov/
 benchmarks/results/*
-!benchmarks/results/fig1_rank.png
-!benchmarks/results/fig1_rank.svg
-!benchmarks/results/fig1_rank.pdf
+!benchmarks/results/fig1_elo.png
+!benchmarks/results/fig1_elo.svg
+!benchmarks/results/fig1_elo.pdf
 !benchmarks/results/fig2_time.png
 !benchmarks/results/fig2_time.svg
 !benchmarks/results/fig2_time.pdf
