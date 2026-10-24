@@ -313,7 +313,7 @@ def figure_rmse(results, s):
     fig.subplots_adjust(
         left=0.205, right=0.99, top=0.9, bottom=0.09, wspace=0.12, hspace=0.55
     )
-    save(fig, "fig1_rmse")
+    save(fig, "figA1_rmse")
     plt.close(fig)
 
 
@@ -330,29 +330,28 @@ def cd_cliques(avg_sorted, cd):
 
 
 def figure_rank(results, s):
+    """Figure 1: Nemenyi critical-difference diagram, one panel."""
     import matplotlib.pyplot as plt
 
     plot_style.apply()
     order, k = s["order"], len(s["order"])
     avg = [s["avg_rank"][m] for m in order]
-    fig, (ax_cd, ax_t) = plt.subplots(
-        2, 1, figsize=(plot_style.WIDTH, 4.6), gridspec_kw={"height_ratios": [0.8, 1.3]}
-    )
-    # (a) critical-difference diagram, rank 1 on the left
-    ax_cd.axis("off")
-    ax_cd.set_xlim(-2.2, k + 3.2)
-    ax_cd.set_ylim(-3.7, 2.5)
-    ax_cd.plot([1, k], [0, 0], color="black", lw=0.6)
+    fig = plt.figure(figsize=(plot_style.WIDTH, 2.2))
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.axis("off")
+    ax.set_xlim(-3.7, k + 3.4)
+    ax.set_ylim(-3.55, 2.0)
+    ax.plot([1, k], [0, 0], color="black", lw=0.6)
     for r in range(1, k + 1):
-        ax_cd.plot([r, r], [0, 0.15], color="black", lw=0.6)
-        ax_cd.text(r, 0.3, str(r), ha="center", va="bottom", fontsize=8)
+        ax.plot([r, r], [0, 0.15], color="black", lw=0.6)
+        ax.text(r, 0.3, str(r), ha="center", va="bottom", fontsize=8)
     half = (k + 1) // 2
     for i, (m, a) in enumerate(zip(order, avg, strict=True)):
         left = i < half
-        depth = -(1.0 + 0.75 * (i if left else k - 1 - i))
+        depth = -(0.95 + 0.7 * (i if left else k - 1 - i))
         xt = 0.55 if left else k + 0.45
-        ax_cd.plot([a, a, xt], [0, depth, depth], color="black", lw=0.6)
-        ax_cd.plot(
+        ax.plot([a, a, xt], [0, depth, depth], color="black", lw=0.6)
+        ax.plot(
             [a],
             [0],
             marker="o",
@@ -362,47 +361,61 @@ def figure_rank(results, s):
             markeredgewidth=0.7,
             zorder=3,
         )
-        ax_cd.text(
+        ax.text(
             xt + (-0.12 if left else 0.12),
             depth,
-            SHORT[m],
+            f"{SHORT[m]} ({a:.2f})",
             ha="right" if left else "left",
             va="center",
             fontsize=8,
         )
     for n, (i, j) in enumerate(cd_cliques(avg, s["cd"])):
         y = -0.4 - 0.2 * n
-        ax_cd.plot(
+        ax.plot(
             [avg[i] - 0.05, avg[j] + 0.05],
             [y, y],
             color="black",
             lw=1.6,
             solid_capstyle="butt",
         )
-    ax_cd.plot([1, 1 + s["cd"]], [1.7, 1.7], color="black", lw=0.7)
+    ax.plot([1, 1 + s["cd"]], [1.4, 1.4], color="black", lw=0.7)
     for x in (1, 1 + s["cd"]):
-        ax_cd.plot([x, x], [1.58, 1.82], color="black", lw=0.7)
-    ax_cd.text(1 + s["cd"] / 2, 1.95, f"CD = {s['cd']:.2f}", ha="center", fontsize=8)
-    ax_cd.text(
-        0, 1.02, "(a)", transform=ax_cd.transAxes, fontsize=9, va="bottom", ha="left"
-    )
-    # (b) accuracy against fit time
+        ax.plot([x, x], [1.28, 1.52], color="black", lw=0.7)
+    ax.text(1 + s["cd"] / 2, 1.63, f"CD = {s['cd']:.2f}", ha="center", fontsize=8)
+    save(fig, "fig1_rank")
+    plt.close(fig)
+
+
+def figure_time(results, s):
+    """Figure 2: average rank against median fit time, one column wide."""
+    import matplotlib.pyplot as plt
+
+    plot_style.apply()
+    order, k = s["order"], len(s["order"])
+    fig, ax = plt.subplots(figsize=(3.5, 3.0))
     times = {
         m: float(
-            np.exp(
-                np.mean(
-                    [
-                        np.log(np.mean(results[d]["models"][m]["fit_seconds"]))
-                        for d in s["datasets"]
-                    ]
-                )
+            np.median(
+                [
+                    np.median(results[d]["models"][m]["fit_seconds"])
+                    for d in s["datasets"]
+                ]
             )
         )
         for m in order
     }
-    left_label = {"HistGradientBoosting"}
+    place = {  # horizontal alignment and offset in points, by model
+        "HistGradientBoosting": ("right", -5, 5),
+        "Random forest": ("left", 5, 0),
+        "Gradient boosting": ("right", -5, -5),
+        "LOWESS + RF residuals": ("left", 5, 0),
+        "LOWESS": ("left", 5, 0),
+        "LOWESS boosting": ("right", 0, -9),
+        "KNN": ("left", 5, 0),
+        "Linear regression": ("left", 5, 0),
+    }
     for m in order:
-        ax_t.plot(
+        ax.plot(
             [times[m]],
             [s["avg_rank"][m]],
             marker="o",
@@ -412,26 +425,23 @@ def figure_rank(results, s):
             markeredgewidth=0.7,
             linestyle="none",
         )
-        on_left = m in left_label
-        ax_t.annotate(
+        side, dx, dy = place[SHORT[m]]
+        ax.annotate(
             SHORT[m],
             (times[m], s["avg_rank"][m]),
-            xytext=(-5 if on_left else 5, 0),
+            xytext=(dx, dy),
             textcoords="offset points",
-            ha="right" if on_left else "left",
+            ha=side,
             va="center",
             fontsize=8,
         )
-    ax_t.set_xscale("log")
-    ax_t.set_xlim(3e-4, 15)
-    ax_t.set_ylim(k + 0.4, 0.6)
-    ax_t.set_ylabel("Average rank (1 = best)")
-    ax_t.set_xlabel("Fit time per fold (s, log scale; geometric mean over datasets)")
-    ax_t.text(
-        -0.0, 1.03, "(b)", transform=ax_t.transAxes, fontsize=9, va="bottom", ha="left"
-    )
-    fig.subplots_adjust(left=0.07, right=0.98, top=0.95, bottom=0.09, hspace=0.3)
-    save(fig, "fig2_rank")
+    ax.set_xscale("log")
+    ax.set_xlim(3e-4, 20)
+    ax.set_ylim(k + 0.4, 0.6)
+    ax.set_ylabel("Average rank (1 = best)")
+    ax.set_xlabel("Median fit time per fold (s)")
+    fig.subplots_adjust(left=0.14, right=0.97, top=0.97, bottom=0.15)
+    save(fig, "fig2_time")
     plt.close(fig)
 
 
@@ -444,6 +454,7 @@ def main():
     print(md)
     figure_rmse(results, s)
     figure_rank(results, s)
+    figure_time(results, s)
     print("Saved figures to", RESULTS_DIR)
 
 

@@ -7,24 +7,23 @@ work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
 
 The only runtime dependencies are numpy, scipy and scikit-learn.
 
-Figure 1 shows the test error of three LOWESS variants and five baselines on
+Figure 1 ranks three LOWESS variants and five baselines by test error across
 seven public regression datasets. LOWESS has the lowest mean error only on Auto
-MPG, which has 3 features. A tree ensemble is best on the other six. The tables
-under [Benchmarks](#benchmarks) give the statistics.
+MPG, which has 3 features, and a tree ensemble is best on the other six. The
+protocol and tables are under [Benchmarks](#benchmarks).
 
-![Box plots of per-fold test RMSE for eight regression models on seven datasets](benchmarks/results/fig1_rmse.png)
+![Critical-difference diagram of the average rank of eight regression models over seven datasets](benchmarks/results/fig1_rank.png)
 
-**Figure 1.** *Per-fold test RMSE of eight regressors on seven datasets.* Each
-box shows the root mean squared error (RMSE) of one model over 15 test folds:
-5-fold cross-validation repeated 3 times with seed 0, on the same folds for
-every model. LOWESS (locally weighted scatterplot smoothing) `frac` and the
-neighbor count of k-nearest neighbors (KNN) are tuned by 3-fold cross-validation
-inside each training set. The vertical line is the median, the box spans the
-interquartile range, whiskers reach the furthest fold within 1.5 times that
-range, circles are folds beyond the whiskers, and the diamond is the mean. White
-boxes are the LOWESS family and gray boxes are baselines (RF is random forest).
-Each x-axis has its own scale and units. California housing uses a log axis so
-that all folds show.
+**Figure 1.** *Average rank of eight regressors across seven datasets.* Each
+model is ranked by mean test root mean squared error (RMSE) on each dataset
+(1 = lowest error), and the ranks are averaged over the datasets. A thick bar
+joins models whose average ranks differ by less than the Nemenyi critical
+difference (CD = 3.97 at alpha = 0.05), so the data cannot separate them. Filled
+circles are the LOWESS (locally weighted scatterplot smoothing) family and open
+circles are baselines (RF is random forest, KNN is k-nearest neighbors). The
+Friedman test rejects equal performance (chi-square = 26.14, 7 degrees of
+freedom, p < 0.001). Only linear regression is separated from the four best
+models, so LOWESS cannot be told apart from the top group.
 
 ## Install
 
@@ -216,10 +215,8 @@ three predictors from the course project.
 
 ### Results by dataset
 
-Figure 1, at the top of this page, plots the same folds.
-
-**Table 1.** Mean RMSE ± half-width of the 95% corrected CI (same units as
-Figure 1). Bold is the lowest mean on that dataset.
+**Table 1.** Mean RMSE ± half-width of the 95% corrected CI (in each
+dataset's own units). Bold is the lowest mean on that dataset.
 
 | Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California | Average rank |
 |---|---|---|---|---|---|---|---|---|
@@ -235,26 +232,8 @@ Figure 1). Bold is the lowest mean on that dataset.
 LOWESS has the lowest mean on Auto MPG only, and there every model's
 interval overlaps every other. On the other six datasets it ranks 4th to 6th.
 On California a few folds inflate the means of the LOWESS family and linear
-regression, and the CI is as wide as the mean. Table 2 gives medians and worst
-folds.
-
-<details>
-<summary>Table 2. Median and worst-fold RMSE</summary>
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 3.734 / 5.596 | 4.19 / 5.11 | 0.548 / 0.817 | 4.40 / 5.08 | 1.78 / 2.00 | 3.44 / 3.69 | 0.499 / 0.541 |
-| Random forest | 1.065 / 1.476 | 4.42 / 5.01 | 0.491 / 0.617 | 4.84 / 5.81 | 1.73 / 1.90 | 3.55 / 3.77 | 0.548 / 0.596 |
-| Gradient boosting | 0.761 / 1.139 | 4.22 / 4.99 | 0.466 / 0.535 | 5.12 / 5.71 | 2.62 / 2.94 | 3.84 / 4.02 | 0.545 / 0.583 |
-| LOWESS + RF residuals | 2.187 / 4.861 | 4.32 / 4.98 | 0.501 / 0.584 | 4.93 / 6.08 | 2.01 / 2.20 | 3.71 / 3.88 | 0.587 / 4.148 |
-| LOWESS | 4.107 / 6.426 | 4.07 / 4.91 | 1.079 / 1.303 | 6.65 / 7.39 | 2.53 / 3.00 | 3.78 / 4.00 | 0.645 / 4.070 |
-| LOWESS boosting | 4.082 / 7.040 | 4.05 / 4.91 | 0.924 / 1.039 | 6.26 / 6.91 | 2.35 / 2.61 | 3.87 / 4.15 | 0.682 / 4.524 |
-| KNN | 9.900 / 14.977 | 4.13 / 4.96 | 2.266 / 2.753 | 8.80 / 9.35 | 3.12 / 3.46 | 4.05 / 4.38 | 0.664 / 0.712 |
-| Linear regression | 8.596 / 11.058 | 4.18 / 5.04 | 3.022 / 3.225 | 10.51 / 11.41 | 4.87 / 5.15 | 4.52 / 4.65 | 0.729 / 5.762 |
-
-Cells are median / worst fold RMSE.
-
-</details>
+regression, and the CI is as wide as the mean. Table A1 gives medians and worst
+folds, and Figure A1 plots every fold.
 
 The California numbers keep their outlier folds. One block group in the test
 data has an average occupancy of 1,243 against a training maximum of 41. A
@@ -267,7 +246,7 @@ outside the training range.
 
 ### Results across datasets
 
-**Table 3.** Rank of each model on each dataset (1 = lowest mean RMSE) and the
+**Table 2.** Rank of each model on each dataset (1 = lowest mean RMSE) and the
 average rank. Friedman chi-square = 26.14 (df 7, p<0.001); Iman-Davenport F = 6.86 (p<0.001); 7 datasets, 8 models. Nemenyi critical difference at 0.05: 3.97 ranks.
 
 | Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California | Average rank |
@@ -281,27 +260,24 @@ average rank. Friedman chi-square = 26.14 (df 7, p<0.001); Iman-Davenport F = 6.
 | KNN | 8 | 4 | 7 | 7 | 7 | 7 | 4 | 6.29 |
 | Linear regression | 7 | 7 | 8 | 8 | 8 | 8 | 8 | 7.71 |
 
-Figure 2 turns the ranks in Table 3 into a critical-difference (CD) diagram, in
-panel (a), and plots average rank against fit time in panel (b).
+Figure 1, at the top of this page, draws the average ranks in Table 2. Figure 2
+plots the same ranks against the median fit time per fold.
 
-![Critical-difference diagram of average ranks, and average rank against fit time](benchmarks/results/fig2_rank.png)
+![Average rank against median fit time for eight regression models](benchmarks/results/fig2_time.png)
 
-**Figure 2.** *Average rank of eight regressors across seven datasets, and its
-relation to fit time.* (a) Nemenyi CD diagram at alpha = 0.05. Each model sits at
-its average rank (1 = best), and a thick bar joins models whose average ranks
-differ by less than the CD of 3.97, so the data cannot separate them. (b) Average
-rank against fit time per fold, as a geometric mean over the datasets, on a log
-axis. Fit time includes the inner grid search of the tuned models. Filled markers
-are the LOWESS family and open markers are baselines.
+**Figure 2.** *Average rank against median fit time of eight regressors.* The
+average rank is the one in Figure 1 (1 = best). Fit time is the median over the
+seven datasets of each dataset's median per-fold fit time, in seconds on a log
+axis, and includes the inner grid search of the tuned models. Filled circles are
+the LOWESS family and open circles are baselines.
 
-Only linear regression is separated from the four best models, and the LOWESS
-family overlaps both the top group and KNN. In panel (b), plain LOWESS fits in
-about 0.1 s per fold and ranks 5th. Boosted LOWESS takes about 1 s and ranks 6th.
-HistGradientBoosting and gradient boosting rank higher and fit in under 0.1 s.
+Plain LOWESS fits in about 0.06 s per fold and ranks 5th. Boosted LOWESS takes
+about 0.8 s and ranks 6th, while HistGradientBoosting and gradient boosting fit
+in about 0.04 s and rank 1st and 3rd. Random forest ranks 2nd at 0.29 s.
 
 ### Paired comparison with the best model
 
-**Table 4.** Mean RMSE difference to the best model on that dataset (model minus
+**Table 3.** Mean RMSE difference to the best model on that dataset (model minus
 best, same units as Table 1; positive means worse), with the Holm-adjusted
 p-value in brackets. The best model on each dataset is marked "best".
 
@@ -315,297 +291,6 @@ p-value in brackets. The best model on each dataset is marked "best".
 | LOWESS boosting | +3.575 (p<0.001) | +0.04 (p=0.893) | +0.452 (p<0.001) | +1.99 (p<0.001) | +0.58 (p<0.001) | +0.42 (p<0.001) | +0.582 (p=1.000) |
 | KNN | +9.550 (p<0.001) | +0.11 (p=0.885) | +1.805 (p<0.001) | +4.38 (p<0.001) | +1.39 (p<0.001) | +0.60 (p<0.001) | +0.161 (p<0.001) |
 | Linear regression | +8.289 (p<0.001) | +0.23 (p=0.508) | +2.473 (p<0.001) | +6.12 (p<0.001) | +3.08 (p<0.001) | +1.03 (p<0.001) | +0.864 (p=1.000) |
-
-<details>
-<summary>Full paired tests: mean difference, corrected 95% CI, t, raw p and Holm p</summary>
-
-**Yacht hydrodynamics** (n=308, p=6, best: Gradient boosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +2.262 | [+0.288, +4.237] | 2.46 | 0.028 | 0.055 |
-| Random forest | +0.234 | [-0.002, +0.470] | 2.12 | 0.052 | 0.055 |
-| LOWESS + RF residuals | +1.760 | [+0.580, +2.941] | 3.20 | 0.006 | 0.019 |
-| LOWESS | +3.418 | [+1.921, +4.914] | 4.90 | <0.001 | <0.001 |
-| LOWESS boosting | +3.575 | [+2.106, +5.043] | 5.22 | <0.001 | <0.001 |
-| KNN | +9.550 | [+6.910, +12.191] | 7.76 | <0.001 | <0.001 |
-| Linear regression | +8.289 | [+7.108, +9.471] | 15.05 | <0.001 | <0.001 |
-
-**Auto MPG** (n=398, p=3, best: LOWESS, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.18 | [-0.11, +0.47] | 1.31 | 0.210 | 0.839 |
-| Random forest | +0.28 | [-0.07, +0.63] | 1.71 | 0.109 | 0.653 |
-| Gradient boosting | +0.10 | [-0.17, +0.36] | 0.78 | 0.446 | 0.893 |
-| LOWESS + RF residuals | +0.14 | [-0.06, +0.34] | 1.51 | 0.154 | 0.772 |
-| LOWESS boosting | +0.04 | [-0.08, +0.15] | 0.65 | 0.524 | 0.893 |
-| KNN | +0.11 | [-0.11, +0.33] | 1.09 | 0.295 | 0.885 |
-| Linear regression | +0.23 | [-0.02, +0.49] | 1.94 | 0.073 | 0.508 |
-
-**Energy efficiency (heating)** (n=768, p=8, best: Gradient boosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.099 | [-0.020, +0.218] | 1.79 | 0.095 | 0.286 |
-| Random forest | +0.019 | [-0.029, +0.068] | 0.86 | 0.403 | 0.729 |
-| LOWESS + RF residuals | +0.024 | [-0.031, +0.078] | 0.94 | 0.364 | 0.729 |
-| LOWESS | +0.598 | [+0.433, +0.763] | 7.78 | <0.001 | <0.001 |
-| LOWESS boosting | +0.452 | [+0.369, +0.535] | 11.70 | <0.001 | <0.001 |
-| KNN | +1.805 | [+1.506, +2.104] | 12.95 | <0.001 | <0.001 |
-| Linear regression | +2.473 | [+2.248, +2.699] | 23.51 | <0.001 | <0.001 |
-
-**Concrete strength** (n=1030, p=8, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.51 | [+0.29, +0.74] | 4.96 | <0.001 | <0.001 |
-| Gradient boosting | +0.70 | [+0.43, +0.97] | 5.53 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.65 | [+0.25, +1.04] | 3.51 | 0.003 | 0.003 |
-| LOWESS | +2.30 | [+1.85, +2.75] | 10.96 | <0.001 | <0.001 |
-| LOWESS boosting | +1.99 | [+1.53, +2.45] | 9.34 | <0.001 | <0.001 |
-| KNN | +4.38 | [+3.80, +4.97] | 15.99 | <0.001 | <0.001 |
-| Linear regression | +6.12 | [+5.40, +6.84] | 18.23 | <0.001 | <0.001 |
-
-**Airfoil self-noise** (n=1503, p=5, best: Random forest, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.07 | [+0.00, +0.15] | 2.16 | 0.049 | 0.049 |
-| Gradient boosting | +0.92 | [+0.75, +1.08] | 11.98 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.28 | [+0.16, +0.41] | 4.79 | <0.001 | <0.001 |
-| LOWESS | +0.83 | [+0.64, +1.03] | 9.31 | <0.001 | <0.001 |
-| LOWESS boosting | +0.58 | [+0.35, +0.80] | 5.51 | <0.001 | <0.001 |
-| KNN | +1.39 | [+1.18, +1.60] | 14.28 | <0.001 | <0.001 |
-| Linear regression | +3.08 | [+2.81, +3.35] | 24.41 | <0.001 | <0.001 |
-
-**Power plant output (5000-row sample)** (n=5000, p=4, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.08 | [+0.02, +0.14] | 2.97 | 0.010 | 0.010 |
-| Gradient boosting | +0.39 | [+0.32, +0.46] | 12.01 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.25 | [+0.19, +0.32] | 8.18 | <0.001 | <0.001 |
-| LOWESS | +0.33 | [+0.23, +0.44] | 6.75 | <0.001 | <0.001 |
-| LOWESS boosting | +0.42 | [+0.32, +0.52] | 8.76 | <0.001 | <0.001 |
-| KNN | +0.60 | [+0.47, +0.72] | 10.13 | <0.001 | <0.001 |
-| Linear regression | +1.03 | [+0.93, +1.14] | 21.06 | <0.001 | <0.001 |
-
-**California housing (5000-row sample)** (n=5000, p=8, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.049 | [+0.039, +0.059] | 10.49 | <0.001 | <0.001 |
-| Gradient boosting | +0.044 | [+0.035, +0.053] | 10.16 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.486 | [-0.644, +1.617] | 0.92 | 0.372 | 1.000 |
-| LOWESS | +0.530 | [-0.557, +1.617] | 1.05 | 0.313 | 1.000 |
-| LOWESS boosting | +0.582 | [-0.638, +1.803] | 1.02 | 0.323 | 1.000 |
-| KNN | +0.161 | [+0.121, +0.201] | 8.67 | <0.001 | <0.001 |
-| Linear regression | +0.864 | [-0.900, +2.627] | 1.05 | 0.311 | 1.000 |
-
-</details>
-
-<details>
-<summary>Mean MAE, R² and fit/predict times per fold</summary>
-
-**Mean MAE** (same units as RMSE)
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 1.398 | 3.02 | 0.376 | 2.96 | 1.29 | 2.59 | 0.340 |
-| Random forest | 0.500 | 3.08 | 0.333 | 3.38 | 1.25 | 2.62 | 0.376 |
-| Gradient boosting | 0.415 | 2.99 | 0.337 | 3.74 | 2.01 | 2.98 | 0.383 |
-| LOWESS + RF residuals | 1.509 | 2.94 | 0.362 | 3.47 | 1.50 | 2.84 | 0.396 |
-| LOWESS | 2.485 | 3.01 | 0.766 | 4.99 | 1.86 | 2.87 | 0.438 |
-| LOWESS boosting | 2.791 | 3.01 | 0.721 | 4.66 | 1.65 | 2.99 | 0.442 |
-| KNN | 6.060 | 3.09 | 1.476 | 6.78 | 2.34 | 3.06 | 0.473 |
-| Linear regression | 7.354 | 3.30 | 2.092 | 8.31 | 3.75 | 3.61 | 0.551 |
-
-**Mean R²**
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California | Average rank |
-|---|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 3.050 ± 2.203 | 4.26 ± 0.62 | 0.571 ± 0.134 | **4.36 ± 0.59** | 1.82 ± 0.13 | **3.48 ± 0.14** | **0.506 ± 0.032** | 2.71 |
-| Random forest | 1.022 ± 0.330 | 4.36 ± 0.55 | 0.492 ± 0.074 | 4.88 ± 0.64 | **1.74 ± 0.12** | 3.56 ± 0.12 | 0.554 ± 0.033 | 2.86 |
-| Gradient boosting | **0.788 ± 0.293** | 4.18 ± 0.51 | **0.472 ± 0.044** | 5.07 ± 0.44 | 2.66 ± 0.18 | 3.87 ± 0.11 | 0.549 ± 0.031 | 3.14 |
-| LOWESS + RF residuals | 2.549 ± 1.266 | 4.22 ± 0.51 | 0.496 ± 0.062 | 5.01 ± 0.56 | 2.03 ± 0.15 | 3.73 ± 0.11 | 0.992 ± 1.145 | 3.57 |
-| LOWESS | 4.206 ± 1.651 | **4.08 ± 0.49** | 1.070 ± 0.142 | 6.67 ± 0.44 | 2.58 ± 0.23 | 3.81 ± 0.13 | 1.036 ± 1.101 | 4.71 |
-| LOWESS boosting | 4.363 ± 1.598 | 4.12 ± 0.50 | 0.924 ± 0.074 | 6.36 ± 0.42 | 2.32 ± 0.23 | 3.90 ± 0.14 | 1.088 ± 1.233 | 5.00 |
-| KNN | 10.339 ± 2.828 | 4.19 ± 0.48 | 2.277 ± 0.314 | 8.75 ± 0.47 | 3.14 ± 0.21 | 4.07 ± 0.15 | 0.666 ± 0.036 | 6.29 |
-| Linear regression | 9.077 ± 1.353 | 4.32 ± 0.47 | 2.945 ± 0.248 | 10.48 ± 0.57 | 4.82 ± 0.27 | 4.51 ± 0.08 | 1.369 ± 1.778 | 7.71 |
-
-### Average rank and Friedman test
-
-Friedman chi-square = 26.14 (df 7, p<0.001); Iman-Davenport F = 6.86 (p<0.001); 7 datasets, 8 models. Nemenyi critical difference at 0.05: 3.97 ranks.
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California | Average rank |
-|---|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 4 | 6 | 4 | 1 | 2 | 1 | 1 | 2.71 |
-| Random forest | 2 | 8 | 2 | 2 | 1 | 2 | 3 | 2.86 |
-| Gradient boosting | 1 | 3 | 1 | 4 | 6 | 5 | 2 | 3.14 |
-| LOWESS + RF residuals | 3 | 5 | 3 | 3 | 3 | 3 | 5 | 3.57 |
-| LOWESS | 5 | 1 | 6 | 6 | 5 | 4 | 6 | 4.71 |
-| LOWESS boosting | 6 | 2 | 5 | 5 | 4 | 6 | 7 | 5.00 |
-| KNN | 8 | 4 | 7 | 7 | 7 | 7 | 4 | 6.29 |
-| Linear regression | 7 | 7 | 8 | 8 | 8 | 8 | 8 | 7.71 |
-
-### Paired comparison with the best model (difference in RMSE)
-
-Cell: mean fold difference (model minus best), then the Holm-adjusted p-value across the other models on that dataset.
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | +2.262 (p=0.055) | +0.18 (p=0.839) | +0.099 (p=0.286) | best | +0.07 (p=0.049) | best | best |
-| Random forest | +0.234 (p=0.055) | +0.28 (p=0.653) | +0.019 (p=0.729) | +0.51 (p<0.001) | best | +0.08 (p=0.010) | +0.049 (p<0.001) |
-| Gradient boosting | best | +0.10 (p=0.893) | best | +0.70 (p<0.001) | +0.92 (p<0.001) | +0.39 (p<0.001) | +0.044 (p<0.001) |
-| LOWESS + RF residuals | +1.760 (p=0.019) | +0.14 (p=0.772) | +0.024 (p=0.729) | +0.65 (p=0.003) | +0.28 (p<0.001) | +0.25 (p<0.001) | +0.486 (p=1.000) |
-| LOWESS | +3.418 (p<0.001) | best | +0.598 (p<0.001) | +2.30 (p<0.001) | +0.83 (p<0.001) | +0.33 (p<0.001) | +0.530 (p=1.000) |
-| LOWESS boosting | +3.575 (p<0.001) | +0.04 (p=0.893) | +0.452 (p<0.001) | +1.99 (p<0.001) | +0.58 (p<0.001) | +0.42 (p<0.001) | +0.582 (p=1.000) |
-| KNN | +9.550 (p<0.001) | +0.11 (p=0.885) | +1.805 (p<0.001) | +4.38 (p<0.001) | +1.39 (p<0.001) | +0.60 (p<0.001) | +0.161 (p<0.001) |
-| Linear regression | +8.289 (p<0.001) | +0.23 (p=0.508) | +2.473 (p<0.001) | +6.12 (p<0.001) | +3.08 (p<0.001) | +1.03 (p<0.001) | +0.864 (p=1.000) |
-
-#### Full paired tests per dataset
-
-**Yacht hydrodynamics** (n=308, p=6, best: Gradient boosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +2.262 | [+0.288, +4.237] | 2.46 | 0.028 | 0.055 |
-| Random forest | +0.234 | [-0.002, +0.470] | 2.12 | 0.052 | 0.055 |
-| LOWESS + RF residuals | +1.760 | [+0.580, +2.941] | 3.20 | 0.006 | 0.019 |
-| LOWESS | +3.418 | [+1.921, +4.914] | 4.90 | <0.001 | <0.001 |
-| LOWESS boosting | +3.575 | [+2.106, +5.043] | 5.22 | <0.001 | <0.001 |
-| KNN | +9.550 | [+6.910, +12.191] | 7.76 | <0.001 | <0.001 |
-| Linear regression | +8.289 | [+7.108, +9.471] | 15.05 | <0.001 | <0.001 |
-
-**Auto MPG** (n=398, p=3, best: LOWESS, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.18 | [-0.11, +0.47] | 1.31 | 0.210 | 0.839 |
-| Random forest | +0.28 | [-0.07, +0.63] | 1.71 | 0.109 | 0.653 |
-| Gradient boosting | +0.10 | [-0.17, +0.36] | 0.78 | 0.446 | 0.893 |
-| LOWESS + RF residuals | +0.14 | [-0.06, +0.34] | 1.51 | 0.154 | 0.772 |
-| LOWESS boosting | +0.04 | [-0.08, +0.15] | 0.65 | 0.524 | 0.893 |
-| KNN | +0.11 | [-0.11, +0.33] | 1.09 | 0.295 | 0.885 |
-| Linear regression | +0.23 | [-0.02, +0.49] | 1.94 | 0.073 | 0.508 |
-
-**Energy efficiency (heating)** (n=768, p=8, best: Gradient boosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.099 | [-0.020, +0.218] | 1.79 | 0.095 | 0.286 |
-| Random forest | +0.019 | [-0.029, +0.068] | 0.86 | 0.403 | 0.729 |
-| LOWESS + RF residuals | +0.024 | [-0.031, +0.078] | 0.94 | 0.364 | 0.729 |
-| LOWESS | +0.598 | [+0.433, +0.763] | 7.78 | <0.001 | <0.001 |
-| LOWESS boosting | +0.452 | [+0.369, +0.535] | 11.70 | <0.001 | <0.001 |
-| KNN | +1.805 | [+1.506, +2.104] | 12.95 | <0.001 | <0.001 |
-| Linear regression | +2.473 | [+2.248, +2.699] | 23.51 | <0.001 | <0.001 |
-
-**Concrete strength** (n=1030, p=8, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.51 | [+0.29, +0.74] | 4.96 | <0.001 | <0.001 |
-| Gradient boosting | +0.70 | [+0.43, +0.97] | 5.53 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.65 | [+0.25, +1.04] | 3.51 | 0.003 | 0.003 |
-| LOWESS | +2.30 | [+1.85, +2.75] | 10.96 | <0.001 | <0.001 |
-| LOWESS boosting | +1.99 | [+1.53, +2.45] | 9.34 | <0.001 | <0.001 |
-| KNN | +4.38 | [+3.80, +4.97] | 15.99 | <0.001 | <0.001 |
-| Linear regression | +6.12 | [+5.40, +6.84] | 18.23 | <0.001 | <0.001 |
-
-**Airfoil self-noise** (n=1503, p=5, best: Random forest, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| HistGradientBoosting | +0.07 | [+0.00, +0.15] | 2.16 | 0.049 | 0.049 |
-| Gradient boosting | +0.92 | [+0.75, +1.08] | 11.98 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.28 | [+0.16, +0.41] | 4.79 | <0.001 | <0.001 |
-| LOWESS | +0.83 | [+0.64, +1.03] | 9.31 | <0.001 | <0.001 |
-| LOWESS boosting | +0.58 | [+0.35, +0.80] | 5.51 | <0.001 | <0.001 |
-| KNN | +1.39 | [+1.18, +1.60] | 14.28 | <0.001 | <0.001 |
-| Linear regression | +3.08 | [+2.81, +3.35] | 24.41 | <0.001 | <0.001 |
-
-**Power plant output (5000-row sample)** (n=5000, p=4, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.08 | [+0.02, +0.14] | 2.97 | 0.010 | 0.010 |
-| Gradient boosting | +0.39 | [+0.32, +0.46] | 12.01 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.25 | [+0.19, +0.32] | 8.18 | <0.001 | <0.001 |
-| LOWESS | +0.33 | [+0.23, +0.44] | 6.75 | <0.001 | <0.001 |
-| LOWESS boosting | +0.42 | [+0.32, +0.52] | 8.76 | <0.001 | <0.001 |
-| KNN | +0.60 | [+0.47, +0.72] | 10.13 | <0.001 | <0.001 |
-| Linear regression | +1.03 | [+0.93, +1.14] | 21.06 | <0.001 | <0.001 |
-
-**California housing (5000-row sample)** (n=5000, p=8, best: HistGradientBoosting, test/train ratio 0.250)
-
-| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
-|---|---|---|---|---|---|
-| Random forest | +0.049 | [+0.039, +0.059] | 10.49 | <0.001 | <0.001 |
-| Gradient boosting | +0.044 | [+0.035, +0.053] | 10.16 | <0.001 | <0.001 |
-| LOWESS + RF residuals | +0.486 | [-0.644, +1.617] | 0.92 | 0.372 | 1.000 |
-| LOWESS | +0.530 | [-0.557, +1.617] | 1.05 | 0.313 | 1.000 |
-| LOWESS boosting | +0.582 | [-0.638, +1.803] | 1.02 | 0.323 | 1.000 |
-| KNN | +0.161 | [+0.121, +0.201] | 8.67 | <0.001 | <0.001 |
-| Linear regression | +0.864 | [-0.900, +2.627] | 1.05 | 0.311 | 1.000 |
-
-### RMSE spread: median and worst fold
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 3.734 / 5.596 | 4.19 / 5.11 | 0.548 / 0.817 | 4.40 / 5.08 | 1.78 / 2.00 | 3.44 / 3.69 | 0.499 / 0.541 |
-| Random forest | 1.065 / 1.476 | 4.42 / 5.01 | 0.491 / 0.617 | 4.84 / 5.81 | 1.73 / 1.90 | 3.55 / 3.77 | 0.548 / 0.596 |
-| Gradient boosting | 0.761 / 1.139 | 4.22 / 4.99 | 0.466 / 0.535 | 5.12 / 5.71 | 2.62 / 2.94 | 3.84 / 4.02 | 0.545 / 0.583 |
-| LOWESS + RF residuals | 2.187 / 4.861 | 4.32 / 4.98 | 0.501 / 0.584 | 4.93 / 6.08 | 2.01 / 2.20 | 3.71 / 3.88 | 0.587 / 4.148 |
-| LOWESS | 4.107 / 6.426 | 4.07 / 4.91 | 1.079 / 1.303 | 6.65 / 7.39 | 2.53 / 3.00 | 3.78 / 4.00 | 0.645 / 4.070 |
-| LOWESS boosting | 4.082 / 7.040 | 4.05 / 4.91 | 0.924 / 1.039 | 6.26 / 6.91 | 2.35 / 2.61 | 3.87 / 4.15 | 0.682 / 4.524 |
-| KNN | 9.900 / 14.977 | 4.13 / 4.96 | 2.266 / 2.753 | 8.80 / 9.35 | 3.12 / 3.46 | 4.05 / 4.38 | 0.664 / 0.712 |
-| Linear regression | 8.596 / 11.058 | 4.18 / 5.04 | 3.022 / 3.225 | 10.51 / 11.41 | 4.87 / 5.15 | 4.52 / 4.65 | 0.729 / 5.762 |
-
-Cells are median / worst fold RMSE.
-
-### Mean MAE
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 1.398 | 3.02 | 0.376 | 2.96 | 1.29 | 2.59 | 0.340 |
-| Random forest | 0.500 | 3.08 | 0.333 | 3.38 | 1.25 | 2.62 | 0.376 |
-| Gradient boosting | 0.415 | 2.99 | 0.337 | 3.74 | 2.01 | 2.98 | 0.383 |
-| LOWESS + RF residuals | 1.509 | 2.94 | 0.362 | 3.47 | 1.50 | 2.84 | 0.396 |
-| LOWESS | 2.485 | 3.01 | 0.766 | 4.99 | 1.86 | 2.87 | 0.438 |
-| LOWESS boosting | 2.791 | 3.01 | 0.721 | 4.66 | 1.65 | 2.99 | 0.442 |
-| KNN | 6.060 | 3.09 | 1.476 | 6.78 | 2.34 | 3.06 | 0.473 |
-| Linear regression | 7.354 | 3.30 | 2.092 | 8.31 | 3.75 | 3.61 | 0.551 |
-
-### Mean R²
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 0.952 | 0.698 | 0.997 | 0.930 | 0.930 | 0.958 | 0.805 |
-| Random forest | 0.995 | 0.683 | 0.998 | 0.913 | 0.936 | 0.956 | 0.766 |
-| Gradient boosting | 0.997 | 0.709 | 0.998 | 0.907 | 0.850 | 0.948 | 0.770 |
-| LOWESS + RF residuals | 0.969 | 0.703 | 0.998 | 0.908 | 0.913 | 0.951 | -0.360 |
-| LOWESS | 0.920 | 0.723 | 0.989 | 0.838 | 0.859 | 0.949 | -0.381 |
-| LOWESS boosting | 0.912 | 0.718 | 0.991 | 0.853 | 0.885 | 0.947 | -0.612 |
-| KNN | 0.523 | 0.708 | 0.948 | 0.722 | 0.792 | 0.942 | 0.661 |
-| Linear regression | 0.623 | 0.691 | 0.914 | 0.602 | 0.508 | 0.929 | -1.896 |
-
-**Mean fit time / predict time per fold, in seconds.** Fit time includes the inner
-grid search for the tuned models.
-
-| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
-|---|---|---|---|---|---|---|---|
-| HistGradientBoosting | 0.0124 / 0.000434 | 0.0152 / 0.000536 | 0.0288 / 0.000753 | 0.0457 / 0.0014 | 0.0396 / 0.00158 | 0.0513 / 0.00379 | 0.0658 / 0.00432 |
-| Random forest | 0.11 / 0.00607 | 0.101 / 0.00655 | 0.146 / 0.00815 | 0.363 / 0.0106 | 0.3 / 0.0125 | 1.4 / 0.0393 | 2.62 / 0.0385 |
-| Gradient boosting | 0.0152 / 0.000191 | 0.0157 / 0.000207 | 0.0226 / 0.000257 | 0.0565 / 0.000349 | 0.0356 / 0.000332 | 0.256 / 0.00109 | 0.41 / 0.00101 |
-| LOWESS + RF residuals | 0.0351 / 0.00251 | 0.0333 / 0.00252 | 0.0499 / 0.00449 | 0.104 / 0.00623 | 0.0872 / 0.0082 | 0.585 / 0.0732 | 0.864 / 0.0828 |
-| LOWESS | 0.0164 / 0.000431 | 0.0172 / 0.000653 | 0.0405 / 0.00198 | 0.0615 / 0.00369 | 0.0955 / 0.00517 | 0.938 / 0.0594 | 1.05 / 0.073 |
-| LOWESS boosting | 0.111 / 0.00222 | 0.114 / 0.00259 | 0.481 / 0.0095 | 0.836 / 0.0185 | 1.27 / 0.0239 | 15 / 0.299 | 17.2 / 0.371 |
-| KNN | 0.0118 / 0.000303 | 0.0119 / 0.000321 | 0.0162 / 0.000419 | 0.0217 / 0.000605 | 0.0245 / 0.000609 | 0.062 / 0.00214 | 0.155 / 0.0102 |
-| Linear regression | 0.000377 / 8.75e-05 | 0.00164 / 8.87e-05 | 0.000444 / 9.25e-05 | 0.000473 / 0.000115 | 0.00047 / 9.43e-05 | 0.000694 / 0.000109 | 0.000797 / 0.000112 |
-
-</details>
 
 ### Reading the results
 
@@ -696,3 +381,169 @@ References:
 ## License
 
 MIT. See [LICENSE](https://github.com/Siyuan-Zhu/lowess-boosting-from-scratch/blob/main/LICENSE).
+
+## Appendix: per-dataset results
+
+<details>
+<summary>Figure A1 and the per-dataset tables</summary>
+
+Figure A1 shows every fold's RMSE on each dataset.
+
+![Box plots of per-fold test RMSE for eight regression models on seven datasets](benchmarks/results/figA1_rmse.png)
+
+**Figure A1.** *Per-fold test RMSE of eight regressors on seven datasets.* Each
+box shows the RMSE of one model over 15 test folds: 5-fold cross-validation
+repeated 3 times with seed 0, on the same folds for every model. LOWESS `frac`
+and the neighbor count of k-nearest neighbors (KNN) are tuned by 3-fold
+cross-validation inside each training set. The vertical line is the median, the
+box spans the interquartile range, whiskers reach the furthest fold within 1.5
+times that range, circles are folds beyond the whiskers, and the diamond is the
+mean. White boxes are the LOWESS family and gray boxes are baselines (RF is
+random forest). Each x-axis has its own scale and units. California housing uses
+a log axis so that all folds show.
+
+On most datasets the boxes of the LOWESS family sit to the right of the tree
+ensembles, and on Auto MPG every box overlaps. On California the three LOWESS
+models and linear regression each have a fold above 4, far from their medians.
+
+**Table A1.** Median / worst-fold RMSE.
+
+| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting | 3.734 / 5.596 | 4.19 / 5.11 | 0.548 / 0.817 | 4.40 / 5.08 | 1.78 / 2.00 | 3.44 / 3.69 | 0.499 / 0.541 |
+| Random forest | 1.065 / 1.476 | 4.42 / 5.01 | 0.491 / 0.617 | 4.84 / 5.81 | 1.73 / 1.90 | 3.55 / 3.77 | 0.548 / 0.596 |
+| Gradient boosting | 0.761 / 1.139 | 4.22 / 4.99 | 0.466 / 0.535 | 5.12 / 5.71 | 2.62 / 2.94 | 3.84 / 4.02 | 0.545 / 0.583 |
+| LOWESS + RF residuals | 2.187 / 4.861 | 4.32 / 4.98 | 0.501 / 0.584 | 4.93 / 6.08 | 2.01 / 2.20 | 3.71 / 3.88 | 0.587 / 4.148 |
+| LOWESS | 4.107 / 6.426 | 4.07 / 4.91 | 1.079 / 1.303 | 6.65 / 7.39 | 2.53 / 3.00 | 3.78 / 4.00 | 0.645 / 4.070 |
+| LOWESS boosting | 4.082 / 7.040 | 4.05 / 4.91 | 0.924 / 1.039 | 6.26 / 6.91 | 2.35 / 2.61 | 3.87 / 4.15 | 0.682 / 4.524 |
+| KNN | 9.900 / 14.977 | 4.13 / 4.96 | 2.266 / 2.753 | 8.80 / 9.35 | 3.12 / 3.46 | 4.05 / 4.38 | 0.664 / 0.712 |
+| Linear regression | 8.596 / 11.058 | 4.18 / 5.04 | 3.022 / 3.225 | 10.51 / 11.41 | 4.87 / 5.15 | 4.52 / 4.65 | 0.729 / 5.762 |
+
+**Table A2.** Paired tests against the best model on each dataset: mean
+difference, corrected 95% CI, t, raw p and Holm-adjusted p.
+
+**Yacht hydrodynamics** (n=308, p=6, best: Gradient boosting, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| HistGradientBoosting | +2.262 | [+0.288, +4.237] | 2.46 | 0.028 | 0.055 |
+| Random forest | +0.234 | [-0.002, +0.470] | 2.12 | 0.052 | 0.055 |
+| LOWESS + RF residuals | +1.760 | [+0.580, +2.941] | 3.20 | 0.006 | 0.019 |
+| LOWESS | +3.418 | [+1.921, +4.914] | 4.90 | <0.001 | <0.001 |
+| LOWESS boosting | +3.575 | [+2.106, +5.043] | 5.22 | <0.001 | <0.001 |
+| KNN | +9.550 | [+6.910, +12.191] | 7.76 | <0.001 | <0.001 |
+| Linear regression | +8.289 | [+7.108, +9.471] | 15.05 | <0.001 | <0.001 |
+
+**Auto MPG** (n=398, p=3, best: LOWESS, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| HistGradientBoosting | +0.18 | [-0.11, +0.47] | 1.31 | 0.210 | 0.839 |
+| Random forest | +0.28 | [-0.07, +0.63] | 1.71 | 0.109 | 0.653 |
+| Gradient boosting | +0.10 | [-0.17, +0.36] | 0.78 | 0.446 | 0.893 |
+| LOWESS + RF residuals | +0.14 | [-0.06, +0.34] | 1.51 | 0.154 | 0.772 |
+| LOWESS boosting | +0.04 | [-0.08, +0.15] | 0.65 | 0.524 | 0.893 |
+| KNN | +0.11 | [-0.11, +0.33] | 1.09 | 0.295 | 0.885 |
+| Linear regression | +0.23 | [-0.02, +0.49] | 1.94 | 0.073 | 0.508 |
+
+**Energy efficiency (heating)** (n=768, p=8, best: Gradient boosting, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| HistGradientBoosting | +0.099 | [-0.020, +0.218] | 1.79 | 0.095 | 0.286 |
+| Random forest | +0.019 | [-0.029, +0.068] | 0.86 | 0.403 | 0.729 |
+| LOWESS + RF residuals | +0.024 | [-0.031, +0.078] | 0.94 | 0.364 | 0.729 |
+| LOWESS | +0.598 | [+0.433, +0.763] | 7.78 | <0.001 | <0.001 |
+| LOWESS boosting | +0.452 | [+0.369, +0.535] | 11.70 | <0.001 | <0.001 |
+| KNN | +1.805 | [+1.506, +2.104] | 12.95 | <0.001 | <0.001 |
+| Linear regression | +2.473 | [+2.248, +2.699] | 23.51 | <0.001 | <0.001 |
+
+**Concrete strength** (n=1030, p=8, best: HistGradientBoosting, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| Random forest | +0.51 | [+0.29, +0.74] | 4.96 | <0.001 | <0.001 |
+| Gradient boosting | +0.70 | [+0.43, +0.97] | 5.53 | <0.001 | <0.001 |
+| LOWESS + RF residuals | +0.65 | [+0.25, +1.04] | 3.51 | 0.003 | 0.003 |
+| LOWESS | +2.30 | [+1.85, +2.75] | 10.96 | <0.001 | <0.001 |
+| LOWESS boosting | +1.99 | [+1.53, +2.45] | 9.34 | <0.001 | <0.001 |
+| KNN | +4.38 | [+3.80, +4.97] | 15.99 | <0.001 | <0.001 |
+| Linear regression | +6.12 | [+5.40, +6.84] | 18.23 | <0.001 | <0.001 |
+
+**Airfoil self-noise** (n=1503, p=5, best: Random forest, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| HistGradientBoosting | +0.07 | [+0.00, +0.15] | 2.16 | 0.049 | 0.049 |
+| Gradient boosting | +0.92 | [+0.75, +1.08] | 11.98 | <0.001 | <0.001 |
+| LOWESS + RF residuals | +0.28 | [+0.16, +0.41] | 4.79 | <0.001 | <0.001 |
+| LOWESS | +0.83 | [+0.64, +1.03] | 9.31 | <0.001 | <0.001 |
+| LOWESS boosting | +0.58 | [+0.35, +0.80] | 5.51 | <0.001 | <0.001 |
+| KNN | +1.39 | [+1.18, +1.60] | 14.28 | <0.001 | <0.001 |
+| Linear regression | +3.08 | [+2.81, +3.35] | 24.41 | <0.001 | <0.001 |
+
+**Power plant output (5000-row sample)** (n=5000, p=4, best: HistGradientBoosting, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| Random forest | +0.08 | [+0.02, +0.14] | 2.97 | 0.010 | 0.010 |
+| Gradient boosting | +0.39 | [+0.32, +0.46] | 12.01 | <0.001 | <0.001 |
+| LOWESS + RF residuals | +0.25 | [+0.19, +0.32] | 8.18 | <0.001 | <0.001 |
+| LOWESS | +0.33 | [+0.23, +0.44] | 6.75 | <0.001 | <0.001 |
+| LOWESS boosting | +0.42 | [+0.32, +0.52] | 8.76 | <0.001 | <0.001 |
+| KNN | +0.60 | [+0.47, +0.72] | 10.13 | <0.001 | <0.001 |
+| Linear regression | +1.03 | [+0.93, +1.14] | 21.06 | <0.001 | <0.001 |
+
+**California housing (5000-row sample)** (n=5000, p=8, best: HistGradientBoosting, test/train ratio 0.250)
+
+| Model | Mean diff | 95% corrected CI | t | p | p (Holm) |
+|---|---|---|---|---|---|
+| Random forest | +0.049 | [+0.039, +0.059] | 10.49 | <0.001 | <0.001 |
+| Gradient boosting | +0.044 | [+0.035, +0.053] | 10.16 | <0.001 | <0.001 |
+| LOWESS + RF residuals | +0.486 | [-0.644, +1.617] | 0.92 | 0.372 | 1.000 |
+| LOWESS | +0.530 | [-0.557, +1.617] | 1.05 | 0.313 | 1.000 |
+| LOWESS boosting | +0.582 | [-0.638, +1.803] | 1.02 | 0.323 | 1.000 |
+| KNN | +0.161 | [+0.121, +0.201] | 8.67 | <0.001 | <0.001 |
+| Linear regression | +0.864 | [-0.900, +2.627] | 1.05 | 0.311 | 1.000 |
+
+**Table A3.** Mean MAE (same units as RMSE).
+
+| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting | 1.398 | 3.02 | 0.376 | 2.96 | 1.29 | 2.59 | 0.340 |
+| Random forest | 0.500 | 3.08 | 0.333 | 3.38 | 1.25 | 2.62 | 0.376 |
+| Gradient boosting | 0.415 | 2.99 | 0.337 | 3.74 | 2.01 | 2.98 | 0.383 |
+| LOWESS + RF residuals | 1.509 | 2.94 | 0.362 | 3.47 | 1.50 | 2.84 | 0.396 |
+| LOWESS | 2.485 | 3.01 | 0.766 | 4.99 | 1.86 | 2.87 | 0.438 |
+| LOWESS boosting | 2.791 | 3.01 | 0.721 | 4.66 | 1.65 | 2.99 | 0.442 |
+| KNN | 6.060 | 3.09 | 1.476 | 6.78 | 2.34 | 3.06 | 0.473 |
+| Linear regression | 7.354 | 3.30 | 2.092 | 8.31 | 3.75 | 3.61 | 0.551 |
+
+**Table A4.** Mean R².
+
+| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting | 0.952 | 0.698 | 0.997 | 0.930 | 0.930 | 0.958 | 0.805 |
+| Random forest | 0.995 | 0.683 | 0.998 | 0.913 | 0.936 | 0.956 | 0.766 |
+| Gradient boosting | 0.997 | 0.709 | 0.998 | 0.907 | 0.850 | 0.948 | 0.770 |
+| LOWESS + RF residuals | 0.969 | 0.703 | 0.998 | 0.908 | 0.913 | 0.951 | -0.360 |
+| LOWESS | 0.920 | 0.723 | 0.989 | 0.838 | 0.859 | 0.949 | -0.381 |
+| LOWESS boosting | 0.912 | 0.718 | 0.991 | 0.853 | 0.885 | 0.947 | -0.612 |
+| KNN | 0.523 | 0.708 | 0.948 | 0.722 | 0.792 | 0.942 | 0.661 |
+| Linear regression | 0.623 | 0.691 | 0.914 | 0.602 | 0.508 | 0.929 | -1.896 |
+
+**Table A5.** Mean fit time / predict time per fold, in seconds. Fit time
+includes the inner grid search of the tuned models.
+
+| Model | Yacht | Auto MPG | Energy | Concrete | Airfoil | Power plant | California |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting | 0.0124 / 0.000434 | 0.0152 / 0.000536 | 0.0288 / 0.000753 | 0.0457 / 0.0014 | 0.0396 / 0.00158 | 0.0513 / 0.00379 | 0.0658 / 0.00432 |
+| Random forest | 0.11 / 0.00607 | 0.101 / 0.00655 | 0.146 / 0.00815 | 0.363 / 0.0106 | 0.3 / 0.0125 | 1.4 / 0.0393 | 2.62 / 0.0385 |
+| Gradient boosting | 0.0152 / 0.000191 | 0.0157 / 0.000207 | 0.0226 / 0.000257 | 0.0565 / 0.000349 | 0.0356 / 0.000332 | 0.256 / 0.00109 | 0.41 / 0.00101 |
+| LOWESS + RF residuals | 0.0351 / 0.00251 | 0.0333 / 0.00252 | 0.0499 / 0.00449 | 0.104 / 0.00623 | 0.0872 / 0.0082 | 0.585 / 0.0732 | 0.864 / 0.0828 |
+| LOWESS | 0.0164 / 0.000431 | 0.0172 / 0.000653 | 0.0405 / 0.00198 | 0.0615 / 0.00369 | 0.0955 / 0.00517 | 0.938 / 0.0594 | 1.05 / 0.073 |
+| LOWESS boosting | 0.111 / 0.00222 | 0.114 / 0.00259 | 0.481 / 0.0095 | 0.836 / 0.0185 | 1.27 / 0.0239 | 15 / 0.299 | 17.2 / 0.371 |
+| KNN | 0.0118 / 0.000303 | 0.0119 / 0.000321 | 0.0162 / 0.000419 | 0.0217 / 0.000605 | 0.0245 / 0.000609 | 0.062 / 0.00214 | 0.155 / 0.0102 |
+| Linear regression | 0.000377 / 8.75e-05 | 0.00164 / 8.87e-05 | 0.000444 / 9.25e-05 | 0.000473 / 0.000115 | 0.00047 / 9.43e-05 | 0.000694 / 0.000109 | 0.000797 / 0.000112 |
+
+</details>
