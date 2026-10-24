@@ -74,8 +74,9 @@ from lowess_boosting import LowessBoostingRegressor, LowessRegressor
 rng = np.random.default_rng(0)
 X = rng.uniform(-3, 3, size=(500, 2))
 y = np.sin(X[:, 0]) * X[:, 1] + rng.normal(scale=0.2, size=500)
-model = make_pipeline(StandardScaler(), LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5))
-print(cross_val_score(model, X, y, cv=5).mean().round(3))  # 0.93 (numpy 2.5.4, scikit-learn 1.9.1)
+boosted = LowessBoostingRegressor(LowessRegressor(frac=0.3), n_estimators=5)
+model = make_pipeline(StandardScaler(), boosted)
+print(cross_val_score(model, X, y, cv=5).mean().round(3))  # 0.93
 ```
 
 At `frac=0.3` a single LOWESS fit scores 0.869 on this data, and five boosting
