@@ -20,6 +20,7 @@ from pathlib import Path
 
 import bench_stats as bs
 import numpy as np
+import plot_style
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -225,181 +226,93 @@ def markdown(results, settings, s):
 
 # ---------------------------------------------------------------------- figures
 
-INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e3e2dd", "#fcfcfb"
-BLUE, GREY = "#2a78d6", "#898781"
+TITLE = {
+    "yacht": "Yacht",
+    "cars": "Auto MPG",
+    "energy": "Energy efficiency",
+    "concrete": "Concrete strength",
+    "airfoil": "Airfoil self-noise",
+    "ccpp": "Power plant",
+    "california": "California housing",
+}
+XLABEL = {
+    "yacht": "RMSE (unitless)",
+    "cars": "RMSE (mpg)",
+    "energy": "RMSE (load units)",
+    "concrete": "RMSE (MPa)",
+    "airfoil": "RMSE (dB)",
+    "ccpp": "RMSE (MW)",
+    "california": "RMSE ($100k, log scale)",
+}
 
 
 def is_lowess(name):
     return name.startswith("LOWESS")
 
 
-def style_axes(ax):
-    ax.set_facecolor(SURFACE)
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(MUTED)
-    ax.tick_params(colors=MUTED, labelsize=8, length=3)
-    ax.grid(axis="x", color=GRID, lw=0.6)
-    ax.set_axisbelow(True)
-
-
 def save(fig, stem):
-    for ext in ("png", "svg"):
-        fig.savefig(RESULTS_DIR / f"{stem}.{ext}", dpi=200, facecolor=SURFACE)
-
-
-def unit_text(units):
-    return " (dimensionless)" if units == "dimensionless" else f" in {units}"
+    for ext in ("pdf", "svg", "png"):
+        fig.savefig(RESULTS_DIR / f"{stem}.{ext}", dpi=plot_style.DPI)
 
 
 def figure_rmse(results, s):
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter, MaxNLocator, NullFormatter
 
-    plt.rcParams["font.family"] = ["Helvetica", "Arial", "DejaVu Sans"]
-    plt.rcParams["svg.fonttype"] = "none"
-    order = s["order"]
-    ds = s["datasets"]
-    ncols = 4
-    nrows = math.ceil((len(ds) + 1) / ncols)
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(14, 3.7 * nrows), facecolor=SURFACE, squeeze=False
-    )
-    rng = np.random.default_rng(0)
+    plot_style.apply()
+    order, ds = s["order"], s["datasets"]
+    fig, axes = plt.subplots(2, 4, figsize=(plot_style.WIDTH, 5.2), sharey=True)
     for k, d in enumerate(ds):
-        ax = axes[k // ncols, k % ncols]
-        style_axes(ax)
-        t = s["table"][d]
+        ax = axes[k // 4, k % 4]
         info = results[d]
-        cis = [t["ci"][m] for m in order]
-        cap = None
-        top = max(ci[2] for ci in cis)
-        folds_all = [np.asarray(info["models"][m]["rmse"]) for m in order]
-        if max(f.max() for f in folds_all) > 1.5 * top:
-            cap = 1.1 * top
-        for row, (m, folds) in enumerate(zip(order, folds_all, strict=True)):
-            color = BLUE if is_lowess(m) else GREY
-            shown = folds if cap is None else folds[folds <= cap]
-            ax.scatter(
-                shown,
-                row + rng.uniform(-0.18, 0.18, shown.size),
-                s=11,
-                color=color,
-                alpha=0.3,
-                lw=0,
-                zorder=2,
-            )
-            if cap is not None and (folds > cap).any():
-                ax.scatter(
-                    [cap] * int((folds > cap).sum()),
-                    [row] * int((folds > cap).sum()),
-                    marker=">",
-                    s=26,
-                    color=color,
-                    zorder=3,
-                    clip_on=False,
-                )
-            mean, lo, hi = t["ci"][m]
-            ax.plot(
-                [lo, hi],
-                [row, row],
-                color=color,
-                lw=2.2,
-                solid_capstyle="butt",
-                zorder=3,
-            )
-            ax.scatter(
-                [mean], [row], s=46, color=color, edgecolor=SURFACE, lw=1.5, zorder=4
-            )
-        ax.set_ylim(len(order) - 0.4, -0.7)
-        ax.set_yticks(range(len(order)))
-        if k % ncols == 0:
-            ax.set_yticklabels([SHORT[m] for m in order], fontsize=9, color=INK)
-            for label, m in zip(ax.get_yticklabels(), order, strict=True):
-                if is_lowess(m):
-                    label.set_fontweight("bold")
-        else:
-            ax.set_yticklabels([])
-        ax.tick_params(axis="y", length=0)
-        if cap is not None:
-            ax.set_xlim(0, cap)
-            n_out = sum(int((f > cap).sum()) for f in folds_all)
-            worst = max(f.max() for f in folds_all)
-            note = (
-                f"Axis cut at {cap:.1f}: {n_out} fold scores lie beyond it "
-                f"(arrows; largest {worst:.2f}).\nIntervals are clipped at the "
-                "edges of the axis."
-            )
-            ax.set_xlabel(note, fontsize=7.5, color=MUTED, labelpad=6)
-        else:
-            lo_all = min(min(f.min() for f in folds_all), min(ci[1] for ci in cis))
-            hi_all = max(max(f.max() for f in folds_all), top)
-            pad = 0.04 * (hi_all - lo_all)
-            ax.set_xlim(max(0, lo_all - pad), hi_all + pad)
+        data = [info["models"][m]["rmse"] for m in order]
+        box = ax.boxplot(
+            data,
+            orientation="horizontal",
+            positions=range(len(order)),
+            widths=0.6,
+            patch_artist=True,
+            showmeans=True,
+            whis=1.5,
+            boxprops={"edgecolor": "black", "linewidth": 0.7},
+            whiskerprops={"color": "black", "linewidth": 0.7},
+            capprops={"color": "black", "linewidth": 0.7},
+            medianprops={"color": "black", "linewidth": 0.8},
+            flierprops={
+                "marker": "o",
+                "markersize": 2.5,
+                "markerfacecolor": "none",
+                "markeredgecolor": "black",
+                "markeredgewidth": 0.6,
+            },
+            meanprops={
+                "marker": "D",
+                "markersize": 2.3,
+                "markerfacecolor": "black",
+                "markeredgecolor": "black",
+            },
+        )
+        for patch, m in zip(box["boxes"], order, strict=True):
+            patch.set_facecolor("white" if is_lowess(m) else plot_style.BASELINE_FILL)
+        ax.set_ylim(len(order) - 0.4, -0.6)
+        ax.set_yticks(range(len(order)), [SHORT[m] for m in order])
+        ax.tick_params(axis="y", labelleft=k % 4 == 0)
         ax.set_title(
-            f"{d}\n",
-            loc="left",
-            fontsize=10.5,
-            fontweight="bold",
-            color=INK,
-            pad=14,
+            f"{TITLE[info['key']]}\nn = {info['n_samples']}, p = {info['n_features']}"
         )
-        ax.text(
-            0,
-            1.03,
-            f"RMSE{unit_text(info['units'])}  ·  n={info['n_samples']}, "
-            f"p={info['n_features']}",
-            transform=ax.transAxes,
-            fontsize=8.5,
-            color=MUTED,
-            va="bottom",
-        )
-    # legend cell
-    ax = axes[len(ds) // ncols, len(ds) % ncols]
-    ax.axis("off")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    y = 0.92
-    ax.text(0, y, "How to read", fontsize=10, fontweight="bold", color=INK, va="top")
-    ax.scatter([0.04], [0.76], s=46, color=BLUE, edgecolor=SURFACE, lw=1.5)
-    ax.plot([0.0, 0.08], [0.76, 0.76], color=BLUE, lw=2.2, solid_capstyle="butt")
-    ax.text(
-        0.14,
-        0.76,
-        "mean RMSE and 95% corrected CI",
-        fontsize=8.5,
-        color=INK,
-        va="center",
+        ax.set_xlabel(XLABEL[info["key"]])
+        if info["key"] == "california":
+            ax.set_xscale("log")
+            ticks = [0.5, 1, 2, 4]
+            ax.set_xticks(ticks)
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+            ax.xaxis.set_minor_formatter(NullFormatter())
+        else:
+            ax.xaxis.set_major_locator(MaxNLocator(4))
+    axes[1, 3].remove()
+    fig.subplots_adjust(
+        left=0.205, right=0.99, top=0.9, bottom=0.09, wspace=0.12, hspace=0.55
     )
-    ax.scatter(
-        [0.02, 0.04, 0.06], [0.62, 0.64, 0.61], s=11, color=BLUE, alpha=0.3, lw=0
-    )
-    ax.text(
-        0.14, 0.62, "one test fold (15 per model)", fontsize=8.5, color=INK, va="center"
-    )
-    ax.scatter([0.04], [0.48], s=46, color=BLUE, edgecolor=SURFACE, lw=1.5)
-    ax.text(
-        0.14,
-        0.48,
-        "blue: LOWESS family (bold labels)",
-        fontsize=8.5,
-        color=INK,
-        va="center",
-    )
-    ax.scatter([0.04], [0.34], s=46, color=GREY, edgecolor=SURFACE, lw=1.5)
-    ax.text(0.14, 0.34, "grey: baselines", fontsize=8.5, color=INK, va="center")
-    ax.text(
-        0,
-        0.18,
-        (
-            "Rows are sorted by average rank across\n"
-            "datasets, best at the top. Lower is\n"
-            "better. Each panel has its own x-axis."
-        ),
-        fontsize=8.5,
-        color=MUTED,
-        va="top",
-    )
-    fig.tight_layout(h_pad=2.2, w_pad=1.2)
     save(fig, "fig1_rmse")
     plt.close(fig)
 
@@ -419,122 +332,105 @@ def cd_cliques(avg_sorted, cd):
 def figure_rank(results, s):
     import matplotlib.pyplot as plt
 
+    plot_style.apply()
     order, k = s["order"], len(s["order"])
     avg = [s["avg_rank"][m] for m in order]
     fig, (ax_cd, ax_t) = plt.subplots(
-        1,
-        2,
-        figsize=(14, 4.6),
-        facecolor=SURFACE,
-        gridspec_kw={"width_ratios": [1.15, 1]},
+        2, 1, figsize=(plot_style.WIDTH, 4.6), gridspec_kw={"height_ratios": [0.8, 1.3]}
     )
     # (a) critical-difference diagram, rank 1 on the left
-    ax_cd.set_facecolor(SURFACE)
     ax_cd.axis("off")
-    ax_cd.set_xlim(-3.4, k + 4.4)
-    ax_cd.set_ylim(-6.6, 3.0)
-    ax_cd.plot([1, k], [0, 0], color=MUTED, lw=1)
+    ax_cd.set_xlim(-2.2, k + 3.2)
+    ax_cd.set_ylim(-3.7, 2.5)
+    ax_cd.plot([1, k], [0, 0], color="black", lw=0.6)
     for r in range(1, k + 1):
-        ax_cd.plot([r, r], [0, 0.18], color=MUTED, lw=1)
-        ax_cd.text(r, 0.4, str(r), ha="center", va="bottom", fontsize=8.5, color=MUTED)
+        ax_cd.plot([r, r], [0, 0.15], color="black", lw=0.6)
+        ax_cd.text(r, 0.3, str(r), ha="center", va="bottom", fontsize=8)
     half = (k + 1) // 2
     for i, (m, a) in enumerate(zip(order, avg, strict=True)):
-        color = BLUE if is_lowess(m) else GREY
         left = i < half
-        depth = -(1.3 + 0.8 * (i if left else k - 1 - i))
-        xt = 0.4 if left else k + 0.6
-        ax_cd.plot([a, a], [0, depth], color=color, lw=1.4)
-        ax_cd.plot([a, xt], [depth, depth], color=color, lw=1.4)
-        ax_cd.scatter([a], [0], s=34, color=color, zorder=3)
+        depth = -(1.0 + 0.75 * (i if left else k - 1 - i))
+        xt = 0.55 if left else k + 0.45
+        ax_cd.plot([a, a, xt], [0, depth, depth], color="black", lw=0.6)
+        ax_cd.plot(
+            [a],
+            [0],
+            marker="o",
+            markersize=3.5,
+            markerfacecolor="black" if is_lowess(m) else "white",
+            markeredgecolor="black",
+            markeredgewidth=0.7,
+            zorder=3,
+        )
         ax_cd.text(
             xt + (-0.12 if left else 0.12),
             depth,
-            f"{SHORT[m]}  ({a:.2f})",
+            SHORT[m],
             ha="right" if left else "left",
             va="center",
-            fontsize=9,
-            color=INK,
+            fontsize=8,
         )
     for n, (i, j) in enumerate(cd_cliques(avg, s["cd"])):
-        y = -0.45 - 0.22 * n
+        y = -0.4 - 0.2 * n
         ax_cd.plot(
             [avg[i] - 0.05, avg[j] + 0.05],
             [y, y],
-            color=INK,
-            lw=3.2,
+            color="black",
+            lw=1.6,
             solid_capstyle="butt",
-            zorder=4,
         )
-    ax_cd.plot([1, 1 + s["cd"]], [1.7, 1.7], color=INK, lw=1.4)
+    ax_cd.plot([1, 1 + s["cd"]], [1.7, 1.7], color="black", lw=0.7)
     for x in (1, 1 + s["cd"]):
-        ax_cd.plot([x, x], [1.58, 1.82], color=INK, lw=1.4)
+        ax_cd.plot([x, x], [1.58, 1.82], color="black", lw=0.7)
+    ax_cd.text(1 + s["cd"] / 2, 1.95, f"CD = {s['cd']:.2f}", ha="center", fontsize=8)
     ax_cd.text(
-        1 + s["cd"] / 2, 1.95, f"CD = {s['cd']:.2f}", ha="center", fontsize=9, color=INK
-    )
-    ax_cd.set_title(
-        "(a) Average rank across datasets (1 = best)",
-        loc="left",
-        fontsize=10.5,
-        fontweight="bold",
-        color=INK,
+        0, 1.02, "(a)", transform=ax_cd.transAxes, fontsize=9, va="bottom", ha="left"
     )
     # (b) accuracy against fit time
-    style_axes(ax_t)
-    ax_t.grid(axis="y", color=GRID, lw=0.6)
     times = {
-        m: math.exp(
-            np.mean(
-                [
-                    math.log(np.mean(results[d]["models"][m]["fit_seconds"]))
-                    for d in s["datasets"]
-                ]
+        m: float(
+            np.exp(
+                np.mean(
+                    [
+                        np.log(np.mean(results[d]["models"][m]["fit_seconds"]))
+                        for d in s["datasets"]
+                    ]
+                )
             )
         )
         for m in order
     }
-    offsets = {"HistGradientBoosting": (-8, 0, "right")}
+    left_label = {"HistGradientBoosting"}
     for m in order:
-        color = BLUE if is_lowess(m) else GREY
-        ax_t.scatter(
+        ax_t.plot(
             [times[m]],
             [s["avg_rank"][m]],
-            s=60,
-            color=color,
-            edgecolor=SURFACE,
-            lw=1.5,
-            zorder=3,
+            marker="o",
+            markersize=4.5,
+            markerfacecolor="black" if is_lowess(m) else "white",
+            markeredgecolor="black",
+            markeredgewidth=0.7,
+            linestyle="none",
         )
-    ax_t.set_xscale("log")
-    ax_t.set_ylim(k + 0.5, 0.5)
-    ax_t.set_ylabel("Average rank (1 = best)", color=MUTED, fontsize=9)
-    ax_t.set_xlabel(
-        "Fit time per fold, geometric mean over datasets (s, log scale)",
-        color=MUTED,
-        fontsize=9,
-    )
-    ax_t.set_title(
-        "(b) Accuracy against fit time",
-        loc="left",
-        fontsize=10.5,
-        fontweight="bold",
-        color=INK,
-    )
-    ax_t.spines["left"].set_visible(True)
-    ax_t.spines["left"].set_color(MUTED)
-    ax_t.figure.canvas.draw()
-    for m in order:
-        dx, dy, ha = offsets.get(m, (8, 0, "left"))
+        on_left = m in left_label
         ax_t.annotate(
             SHORT[m],
             (times[m], s["avg_rank"][m]),
-            xytext=(dx, dy),
+            xytext=(-5 if on_left else 5, 0),
             textcoords="offset points",
-            ha=ha,
+            ha="right" if on_left else "left",
             va="center",
-            fontsize=8.5,
-            color=INK,
+            fontsize=8,
         )
-    fig.tight_layout(w_pad=3)
+    ax_t.set_xscale("log")
+    ax_t.set_xlim(3e-4, 15)
+    ax_t.set_ylim(k + 0.4, 0.6)
+    ax_t.set_ylabel("Average rank (1 = best)")
+    ax_t.set_xlabel("Fit time per fold (s, log scale; geometric mean over datasets)")
+    ax_t.text(
+        -0.0, 1.03, "(b)", transform=ax_t.transAxes, fontsize=9, va="bottom", ha="left"
+    )
+    fig.subplots_adjust(left=0.07, right=0.98, top=0.95, bottom=0.09, hspace=0.3)
     save(fig, "fig2_rank")
     plt.close(fig)
 

@@ -12,8 +12,10 @@ coverage.xml
 htmlcov/
 benchmarks/results/*
 !benchmarks/results/fig1_rmse.png
+!benchmarks/results/fig1_rmse.pdf
 !benchmarks/results/fig1_rmse.svg
 !benchmarks/results/fig2_rank.png
+!benchmarks/results/fig2_rank.pdf
 !benchmarks/results/fig2_rank.svg
 *.csv
 *.arff

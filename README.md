@@ -7,23 +7,24 @@ work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
 
 The only runtime dependencies are numpy, scipy and scikit-learn.
 
-![Figure 1: mean RMSE with 95% corrected confidence intervals for eight models on seven datasets, one panel per dataset](benchmarks/results/fig1_rmse.png)
+Figure 1 shows how three LOWESS variants and five baselines score on seven
+public regression datasets. LOWESS has the lowest mean error only on the
+3-feature Auto MPG data, and the tree ensembles do better on the rest. The
+tables under [Benchmarks](#benchmarks) give the statistics.
 
-**Figure 1.** Test RMSE of eight models on seven public regression datasets.
-Each panel is one dataset with its own x-axis, in the dataset's units (the
-panel subtitle names them), and the models are in the same row order in every
-panel (sorted by average rank across datasets, best first). The large point is
-the mean RMSE over 15 test folds (5-fold cross-validation repeated 3 times,
-seed 0, identical folds for every model). The bar is a 95% confidence interval
-for that mean from the Nadeau-Bengio corrected resampled t-test (14 degrees of
-freedom; the variance term is `(1/15 + 1/4) s^2`, which allows for training
-sets that overlap between folds). The faint dots are the 15 fold scores. Blue
-is the LOWESS family and grey is everything else. In the California panel the
-axis is cut at 3.5: four fold scores lie beyond it (arrows, largest 5.76) and
-interval ends below zero are clipped. Those folds are kept in every mean, CI
-and test. Tuned models choose LOWESS `frac` or KNN `k` by 3-fold cross-validation
-inside each training set. Tables and the other figure are under
-[Benchmarks](#benchmarks).
+![Box plots of per-fold test RMSE for eight regression models on seven datasets](benchmarks/results/fig1_rmse.png)
+
+**Figure 1.** *Per-fold test RMSE of eight regressors on seven datasets.* Each
+box summarizes the root mean squared error (RMSE) of one model over 15 test
+folds (5-fold cross-validation repeated 3 times, seed 0, the same folds for
+every model; LOWESS `frac` and the number of neighbors for k-nearest-neighbors (KNN) are tuned by 3-fold
+cross-validation inside each training set). The vertical line is the median, the box
+spans the interquartile range, whiskers reach the furthest fold within 1.5
+times that range, circles are folds beyond the whiskers, and the diamond is the
+mean. White boxes are the LOWESS (locally weighted scatterplot smoothing)
+family, gray boxes are baselines (RF is random forest). The x-axes differ by
+dataset and carry each dataset's units; California housing uses a log axis so
+that all folds are visible.
 
 ## Install
 
@@ -215,7 +216,7 @@ three predictors from the course project.
 
 ### Results by dataset
 
-Figure 1 is at the top of this page.
+Figure 1, at the top of this page, plots the same folds.
 
 **Table 1.** Mean RMSE ± half-width of the 95% corrected CI (same units as
 Figure 1). Bold is the lowest mean on that dataset.
@@ -280,15 +281,25 @@ average rank. Friedman chi-square = 26.14 (df 7, p<0.001); Iman-Davenport F = 6.
 | KNN | 8 | 4 | 7 | 7 | 7 | 7 | 4 | 6.29 |
 | Linear regression | 7 | 7 | 8 | 8 | 8 | 8 | 8 | 7.71 |
 
-![Figure 2: critical-difference diagram of average ranks and average rank against fit time](benchmarks/results/fig2_rank.png)
+Figure 2 summarizes the ranks in Table 3. Panel (a) is a critical-difference
+(CD) diagram and panel (b) plots average rank against fit time.
 
-**Figure 2.** (a) Nemenyi critical-difference diagram. Models are placed at
-their average rank over the 7 datasets (1 = best). A thick bar joins models whose
-average ranks differ by less than the critical difference (CD = 3.97 at
-alpha = 0.05, 8 models, 7 datasets), so the data cannot separate them. (b) Average
-rank against fit time per fold (log axis), averaged as a geometric mean over the
-7 datasets. Fit time includes the inner grid search for tuned models. Blue is the
-LOWESS family.
+![Critical-difference diagram of average ranks, and average rank against fit time](benchmarks/results/fig2_rank.png)
+
+**Figure 2.** *Average rank of eight regressors across seven datasets, and its
+relation to fit time.* (a) Nemenyi critical-difference (CD) diagram at
+alpha = 0.05: models sit at their average rank (1 = best), and a thick bar joins
+models whose average ranks differ by less than the CD of 3.97, which the data
+cannot separate. (b) Average rank against fit time per fold, as a geometric mean
+over the datasets, on a log axis. The fit time includes the inner grid search of
+the tuned models. Filled markers are the LOWESS family and open markers are
+baselines.
+
+Only linear regression is separated from the four best models, and the LOWESS
+family overlaps both the top group and KNN. In panel (b), plain LOWESS fits in
+about 0.1 s per fold and ranks 5th, boosted LOWESS takes about 1 s and ranks 6th,
+and HistGradientBoosting and gradient boosting rank higher and fit in under
+0.1 s.
 
 ### Paired comparison with the best model
 
