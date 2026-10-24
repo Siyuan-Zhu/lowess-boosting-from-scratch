@@ -1,7 +1,9 @@
 # lowess-boosting
 
-LOWESS (locally weighted linear regression) for any number of features, and
-least-squares gradient boosting with LOWESS as the base learner, both as scikit-learn estimators.
+A from-scratch implementation of LOWESS (locally weighted linear regression) and of
+gradient boosting with LOWESS as the base learner, as scikit-learn estimators. It is
+benchmarked against seven standard regression models on seven public datasets, and
+the best variant ranks 4th of 8.
 
 ![Elo ratings with bootstrap confidence intervals for eight regression models](benchmarks/results/fig1_elo.png)
 
@@ -13,21 +15,21 @@ are baselines (RF is random forest, KNN is k-nearest neighbors).
 
 ## Results in brief
 
-- The course-project hybrid (LOWESS plus a random forest on its residuals) ranks
-  4th of 8 by average rank (3.57) and has an Elo rating of 1593, against 1685 for
-  HistGradientBoosting, the top model.
-- Plain LOWESS has the lowest mean error only on Auto MPG (4.08 mpg), where all
-  eight models are within 0.24 mpg and no difference is significant. On yacht,
-  energy, concrete, airfoil and power plant it is significantly worse than the best
-  model (Holm-adjusted p < 0.001); on California the outlier folds leave the
-  test inconclusive. Its Elo rating is 1438.
-- Boosted LOWESS fits in a median 0.8 s per fold, against 0.04 s for
-  HistGradientBoosting, and costs about 12 to 16 times plain LOWESS on the four
-  largest datasets. A full-data California run did not finish in 45 minutes, so
-  California and power plant are 5,000-row samples.
-- Seven datasets limit the statistics. No Wilcoxon comparison with the top model
-  survives Holm adjustment (smallest adjusted p 0.109), and the Elo intervals
-  overlap widely.
+- The best variant is LOWESS with a random forest fitted to its errors, the setup
+  from the original course project. It ranks 4th of 8, behind three tree
+  ensembles, with an Elo rating of 1593 against 1685 for the top model,
+  HistGradientBoosting.
+- Plain LOWESS has the lowest average error on one dataset, Auto MPG, where all
+  eight models are within 0.24 mpg of each other. On five of the other six it is
+  worse than the best model by a statistically significant margin. Its Elo rating
+  is 1438.
+- Boosted LOWESS takes a median 0.8 s to fit per fold, against 0.04 s for
+  HistGradientBoosting, and is 12 to 16 times slower than plain LOWESS on the
+  four largest datasets. A run on the full California data did not finish in 45
+  minutes, so California and power plant use 5,000-row samples.
+- Seven datasets are too few to show that any of the top four models beats the
+  others. The tests behind these statements are in
+  [Evaluation method](#evaluation-method).
 
 ## What this project shows
 
