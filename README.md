@@ -7,24 +7,24 @@ work with `Pipeline`, `GridSearchCV`, `clone` and pickling.
 
 The only runtime dependencies are numpy, scipy and scikit-learn.
 
-Figure 1 shows how three LOWESS variants and five baselines score on seven
-public regression datasets. LOWESS has the lowest mean error only on the
-3-feature Auto MPG data, and the tree ensembles do better on the rest. The
-tables under [Benchmarks](#benchmarks) give the statistics.
+Figure 1 shows the test error of three LOWESS variants and five baselines on
+seven public regression datasets. LOWESS has the lowest mean error only on Auto
+MPG, which has 3 features. A tree ensemble is best on the other six. The tables
+under [Benchmarks](#benchmarks) give the statistics.
 
 ![Box plots of per-fold test RMSE for eight regression models on seven datasets](benchmarks/results/fig1_rmse.png)
 
 **Figure 1.** *Per-fold test RMSE of eight regressors on seven datasets.* Each
-box summarizes the root mean squared error (RMSE) of one model over 15 test
-folds (5-fold cross-validation repeated 3 times, seed 0, the same folds for
-every model; LOWESS `frac` and the number of neighbors for k-nearest-neighbors (KNN) are tuned by 3-fold
-cross-validation inside each training set). The vertical line is the median, the box
-spans the interquartile range, whiskers reach the furthest fold within 1.5
-times that range, circles are folds beyond the whiskers, and the diamond is the
-mean. White boxes are the LOWESS (locally weighted scatterplot smoothing)
-family, gray boxes are baselines (RF is random forest). The x-axes differ by
-dataset and carry each dataset's units; California housing uses a log axis so
-that all folds are visible.
+box shows the root mean squared error (RMSE) of one model over 15 test folds:
+5-fold cross-validation repeated 3 times with seed 0, on the same folds for
+every model. LOWESS (locally weighted scatterplot smoothing) `frac` and the
+neighbor count of k-nearest neighbors (KNN) are tuned by 3-fold cross-validation
+inside each training set. The vertical line is the median, the box spans the
+interquartile range, whiskers reach the furthest fold within 1.5 times that
+range, circles are folds beyond the whiskers, and the diamond is the mean. White
+boxes are the LOWESS family and gray boxes are baselines (RF is random forest).
+Each x-axis has its own scale and units. California housing uses a log axis so
+that all folds show.
 
 ## Install
 
@@ -281,25 +281,23 @@ average rank. Friedman chi-square = 26.14 (df 7, p<0.001); Iman-Davenport F = 6.
 | KNN | 8 | 4 | 7 | 7 | 7 | 7 | 4 | 6.29 |
 | Linear regression | 7 | 7 | 8 | 8 | 8 | 8 | 8 | 7.71 |
 
-Figure 2 summarizes the ranks in Table 3. Panel (a) is a critical-difference
-(CD) diagram and panel (b) plots average rank against fit time.
+Figure 2 turns the ranks in Table 3 into a critical-difference (CD) diagram, in
+panel (a), and plots average rank against fit time in panel (b).
 
 ![Critical-difference diagram of average ranks, and average rank against fit time](benchmarks/results/fig2_rank.png)
 
 **Figure 2.** *Average rank of eight regressors across seven datasets, and its
-relation to fit time.* (a) Nemenyi critical-difference (CD) diagram at
-alpha = 0.05: models sit at their average rank (1 = best), and a thick bar joins
-models whose average ranks differ by less than the CD of 3.97, which the data
-cannot separate. (b) Average rank against fit time per fold, as a geometric mean
-over the datasets, on a log axis. The fit time includes the inner grid search of
-the tuned models. Filled markers are the LOWESS family and open markers are
-baselines.
+relation to fit time.* (a) Nemenyi CD diagram at alpha = 0.05. Each model sits at
+its average rank (1 = best), and a thick bar joins models whose average ranks
+differ by less than the CD of 3.97, so the data cannot separate them. (b) Average
+rank against fit time per fold, as a geometric mean over the datasets, on a log
+axis. Fit time includes the inner grid search of the tuned models. Filled markers
+are the LOWESS family and open markers are baselines.
 
 Only linear regression is separated from the four best models, and the LOWESS
 family overlaps both the top group and KNN. In panel (b), plain LOWESS fits in
-about 0.1 s per fold and ranks 5th, boosted LOWESS takes about 1 s and ranks 6th,
-and HistGradientBoosting and gradient boosting rank higher and fit in under
-0.1 s.
+about 0.1 s per fold and ranks 5th. Boosted LOWESS takes about 1 s and ranks 6th.
+HistGradientBoosting and gradient boosting rank higher and fit in under 0.1 s.
 
 ### Paired comparison with the best model
 
